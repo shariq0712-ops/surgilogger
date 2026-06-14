@@ -257,7 +257,7 @@
 
                     <div class="btn-group" style="justify-content: space-between; align-items: center;">
                         <div style="display: flex; gap: 10px;">
-                            <button type="button" class="btn btn-secondary" onclick="collectorBack()" id="collectorBackBtn" disabled>⬅️ Back</button>
+                            <button type="button" class="btn btn-secondary" onclick="collectorGoBack()" id="collectorBackBtn">⬅️ Back</button>
                             <button type="reset" class="btn btn-secondary">Clear Form</button>
                         </div>
                         <div style="display: flex; gap: 10px;">
@@ -623,7 +623,7 @@
 
     <script>
         // ==================== APPS SCRIPT CONFIG ====================
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzt1lFbY5k1J6S_Q2iFyc26-cgMxj6JYXiqdcS7Vwt_S6J175JyOBqI8N99MVgg-r4y/exec';
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyPM9r0yzXZz8Dw9YS3I-XM8mE5VAB7aLjqJa7D-PVfSi8DdfGii6ZUN691cpJCTOlEvQ/exec';
         const SURGEON_PASSWORD = 'ChangeThisToYourSecretPassword123'; // Must match Apps Script
         const COLLECTOR_SECRET = 'COLLECTOR_SUBMIT_2024'; // Must match Apps Script
 
@@ -977,9 +977,17 @@
             renderLogs();
         }
 
-        // ==================== COLLECTOR ENTRY ====================
+        // ==================== COLLECTOR ENTRY (Unified for Submit and Next) ====================
         async function saveCollectorEntry(e) {
-            e.preventDefault();
+            if (e) e.preventDefault();
+            await collectorSubmit(false); // false = don't clear form (Submit keeps form for editing)
+        }
+
+        async function collectorNext() {
+            await collectorSubmit(true); // true = clear form for next entry
+        }
+
+        async function collectorSubmit(shouldClearForm) {
             const entry = {
                 id: Date.now().toString(),
                 surgeryDate: document.getElementById('cSurgeryDate').value,
@@ -1001,20 +1009,32 @@
                 collectorDevice: navigator.userAgent.substring(0, 50)
             };
 
-            let collectorData = [];
-            const stored = localStorage.getItem(COLLECTOR_STORAGE);
-            if (stored) {
-                const decrypted = await decryptData(JSON.parse(stored), COLLECTOR_KEY);
-                if (decrypted) collectorData = decrypted;
+            // Validate required fields
+            if (!entry.surgeryDate || !entry.patientId || !entry.procedure) {
+                alert('Please fill in required fields: Date, Patient ID, and Procedure');
+                return;
             }
 
-            collectorData.push(entry);
-            const encrypted = await encryptData(collectorData, COLLECTOR_KEY);
-            localStorage.setItem(COLLECTOR_STORAGE, JSON.stringify(encrypted));
+            collectorEntries.push(entry);
+            currentCollectorIndex = collectorEntries.length - 1;
 
+            // Save to localStorage
+            await saveCollectorEntriesToStorage();
+
+            // Show success UI
             document.getElementById('collectorSuccess').classList.remove('hidden');
-            document.getElementById('collectorForm').reset();
-            document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
+            updateCollectorSuccessUI();
+
+            // Sync to Drive immediately
+            document.getElementById('collectorCloudStatus').textContent = '⏳ Syncing to Drive...';
+            await syncCollectorToDrive();
+
+            if (shouldClearForm) {
+                document.getElementById('collectorForm').reset();
+                document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
+            }
+
+            updateCollectorNavButtons();
         }
 
         async function downloadCollectorData() {
@@ -1062,7 +1082,9 @@
             results.innerHTML = '<h4 style="margin-bottom: 10px;">Import Results:</h4>';
 
             let totalImported = 0;
+            let duplicatesSkipped = 0;
             const currentData = await getData();
+            const existingIds = new Set(currentData.map(e => e.id));
 
             for (const file of pendingCollectorFiles) {
                 try {
@@ -1076,14 +1098,23 @@
                     }
 
                     if (Array.isArray(collectorData)) {
+                        let fileNew = 0;
+                        let fileDupes = 0;
                         collectorData.forEach(entry => {
+                            if (existingIds.has(entry.id)) {
+                                duplicatesSkipped++;
+                                fileDupes++;
+                                return;
+                            }
                             entry.importedAt = new Date().toISOString();
                             entry.originalSource = entry.source;
                             entry.source = 'collector-imported';
                             currentData.push(entry);
+                            existingIds.add(entry.id);
+                            fileNew++;
                         });
-                        totalImported += collectorData.length;
-                        results.innerHTML += `<div style="color: #059669;">✅ ${file.name}: Imported ${collectorData.length} entries</div>`;
+                        totalImported += fileNew;
+                        results.innerHTML += `<div style="color: #059669;">✅ ${file.name}: Imported ${fileNew} new entries${fileDupes > 0 ? ` (${fileDupes} duplicates skipped)` : ''}</div>`;
                     }
                 } catch (err) {
                     results.innerHTML += `<div style="color: #dc2626;">❌ ${file.name}: Error - ${err.message}</div>`;
@@ -1091,10 +1122,11 @@
             }
 
             await saveData(currentData);
+            updateSyncStatus('pending');
             updateStats();
             renderLogs();
 
-            results.innerHTML += `<div style="margin-top: 10px; font-weight: bold;">Total imported: ${totalImported} entries</div>`;
+            results.innerHTML += `<div style="margin-top: 10px; font-weight: bold;">✅ New: ${totalImported} | ⏭️ Duplicates skipped: ${duplicatesSkipped}</div>`;
             pendingCollectorFiles = [];
             document.getElementById('collectorFiles').value = '';
             document.getElementById('collectorPreview').classList.add('hidden');
@@ -1428,6 +1460,14 @@
             updateCollectorNavButtons();
         }
 
+        function collectorGoBack() {
+            // Go back to role selection screen
+            document.getElementById('collectorApp').classList.add('hidden');
+            document.getElementById('loginScreen').classList.remove('hidden');
+            // Reset to surgeon selection by default
+            selectRole('surgeon');
+        }
+
         function loadCollectorEntry(index) {
             const entry = collectorEntries[index];
             if (!entry) return;
@@ -1552,7 +1592,7 @@
             await downloadAllCollectorData();
         }
 
-        // ==================== SURGEON: LOAD COLLECTOR SUBMISSIONS FROM DRIVE ====================
+        // ==================== SURGEON: LOAD COLLECTOR SUBMISSIONS FROM DRIVE (MERGE) ====================
         async function loadCollectorSubmissionsFromDrive() {
             if (!encryptionKey) { alert('Please login as surgeon first'); return; }
 
@@ -1574,7 +1614,11 @@
                 document.getElementById('uploadStatus').textContent = `Found ${data.submissions.length} submission(s)...`;
 
                 let totalImported = 0;
+                let duplicatesSkipped = 0;
+
+                // Get existing data and build a set of existing IDs to avoid duplicates
                 const currentData = await getData();
+                const existingIds = new Set(currentData.map(e => e.id));
 
                 for (const sub of data.submissions) {
                     try {
@@ -1582,12 +1626,19 @@
                         if (!collectorData || !Array.isArray(collectorData)) continue;
 
                         collectorData.forEach(entry => {
+                            // Skip if this entry ID already exists (merge, don't replace)
+                            if (existingIds.has(entry.id)) {
+                                duplicatesSkipped++;
+                                return;
+                            }
+
                             entry.importedAt = new Date().toISOString();
                             entry.originalSource = entry.source;
                             entry.source = 'collector-imported';
                             entry.submittedFromDrive = true;
                             entry.submittedAt = sub.submittedAt;
                             currentData.push(entry);
+                            existingIds.add(entry.id); // Track to prevent duplicates within same import
                         });
                         totalImported += collectorData.length;
                     } catch (e) {
@@ -1597,10 +1648,24 @@
 
                 document.getElementById('progressFill').style.width = '80%';
 
+                // Save merged data
                 await saveData(currentData);
 
-                // Clear collector submissions from Drive
-                if (confirm(`Import ${totalImported} entries? Clear collector queue from Drive after import?`)) {
+                // Ask to clear collector queue
+                const shouldClear = confirm(
+                    `Import complete!
+
+` +
+                    `✅ New entries imported: ${totalImported - duplicatesSkipped}
+` +
+                    `⏭️ Duplicates skipped: ${duplicatesSkipped}
+
+` +
+                    `Clear collector queue from Drive?`
+                );
+
+                if (shouldClear) {
+                    document.getElementById('uploadStatus').textContent = 'Clearing collector queue...';
                     await fetch(APPS_SCRIPT_URL, {
                         method: 'POST',
                         redirect: 'follow',
@@ -1613,8 +1678,8 @@
                 }
 
                 document.getElementById('progressFill').style.width = '100%';
-                document.getElementById('uploadStatus').textContent = `✅ Imported ${totalImported} entries from Drive`;
-                updateSyncStatus('synced');
+                document.getElementById('uploadStatus').textContent = `✅ Merged ${totalImported - duplicatesSkipped} new entries (${duplicatesSkipped} duplicates skipped)`;
+                updateSyncStatus('pending'); // Local data changed, needs surgeon save to Drive
                 updateStats();
                 renderLogs();
 
