@@ -66,6 +66,7 @@
         .alert-info { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
         .alert-success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
         .alert-warning { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+        .alert-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 
         .tabs { display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; flex-wrap: wrap; }
         .tab { padding: 12px 20px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 600; color: #64748b; }
@@ -87,24 +88,22 @@
         .drive-section { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
         .drive-section h3 { color: #0369a1; margin-bottom: 10px; }
 
-        .file-list { max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
-        .file-item { padding: 12px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.2s; }
-        .file-item:hover { background: #f8fafc; }
-        .file-item:last-child { border-bottom: none; }
-        .file-item.selected { background: #dbeafe; border-left: 3px solid #2d5a87; }
-
         .progress-bar { width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; margin: 10px 0; }
         .progress-fill { height: 100%; background: #2d5a87; transition: width 0.3s; width: 0%; }
 
-        .key-display { background: #1e3a5f; color: #4ade80; font-family: 'Courier New', monospace; padding: 15px; border-radius: 8px; word-break: break-all; font-size: 0.9rem; margin: 10px 0; }
         .key-input { font-family: 'Courier New', monospace; letter-spacing: 2px; }
 
         .share-box { background: #f0fdf4; border: 2px dashed #86efac; border-radius: 10px; padding: 20px; text-align: center; margin: 15px 0; }
-        .share-box p { color: #166534; margin-bottom: 10px; }
         .share-url { background: white; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 0.85rem; word-break: break-all; border: 1px solid #bbf7d0; color: #15803d; }
 
         .copy-btn { background: #059669; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-top: 10px; }
         .copy-btn:hover { background: #047857; }
+
+        .debug-box { background: #1e1e1e; color: #4ade80; font-family: monospace; padding: 15px; border-radius: 8px; font-size: 0.8rem; max-height: 200px; overflow-y: auto; margin-top: 15px; }
+        .debug-box div { margin-bottom: 4px; }
+        .debug-error { color: #f87171; }
+        .debug-info { color: #60a5fa; }
+        .debug-success { color: #4ade80; }
 
         @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr; } .btn-group { flex-direction: column; } .role-select { flex-direction: column; } }
     </style>
@@ -129,14 +128,12 @@
                 </div>
             </div>
 
-            <!-- Surgeon Login -->
             <div id="surgeonLogin">
                 <input type="password" id="surgeonKey" class="key-input" placeholder="Enter your encryption key" style="margin-bottom: 10px;">
                 <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 15px;">This key decrypts all data. Never share it with collectors.</p>
                 <button class="btn btn-primary" onclick="surgeonLogin()" style="width: 100%;">Enter as Surgeon</button>
             </div>
 
-            <!-- Collector Login (Hidden by default) -->
             <div id="collectorLogin" class="hidden">
                 <div class="alert alert-info" style="text-align: left; margin-bottom: 15px;">
                     <strong>No password needed!</strong><br>
@@ -167,7 +164,7 @@
                     All entries are automatically encrypted. The surgeon will decrypt them for analysis.
                 </div>
 
-                <form id="collectorForm" onsubmit="saveCollectorEntry(event)">
+                <form id="collectorForm" onsubmit="event.preventDefault(); collectorSubmit(false);">
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Date of Surgery <span class="required">*</span></label>
@@ -257,19 +254,29 @@
 
                     <div class="btn-group" style="justify-content: space-between; align-items: center;">
                         <div style="display: flex; gap: 10px;">
-                            <button type="button" class="btn btn-secondary" onclick="collectorGoBack()" id="collectorBackBtn">⬅️ Back</button>
+                            <button type="button" class="btn btn-secondary" onclick="collectorGoBack()">⬅️ Back</button>
                             <button type="reset" class="btn btn-secondary">Clear Form</button>
                         </div>
                         <div style="display: flex; gap: 10px;">
                             <button type="submit" class="btn btn-success">💾 Submit Entry</button>
-                            <button type="button" class="btn btn-primary" onclick="collectorNext()" id="collectorNextBtn">Next / New Entry ➡️</button>
+                            <button type="button" class="btn btn-primary" onclick="collectorNext()">Next / New Entry ➡️</button>
                         </div>
                     </div>
                 </form>
 
                 <div id="collectorSuccess" class="alert alert-success hidden" style="margin-top: 15px;">
-                    ✅ Entry saved! You can add another or 
-                    <button class="btn btn-primary" onclick="downloadCollectorData()" style="padding: 4px 12px; font-size: 0.85rem;">📥 Download encrypted file for surgeon</button>
+                    <div id="collectorSyncStatus"></div>
+                    <div id="collectorCloudStatus" style="margin-top: 8px; font-size: 0.85rem; color: #64748b;"></div>
+                    <div style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-primary" onclick="syncCollectorToDrive()" style="padding: 4px 12px; font-size: 0.85rem;">☁️ Sync to Drive</button>
+                        <button class="btn btn-secondary" onclick="downloadAllCollectorData()" style="padding: 4px 12px; font-size: 0.85rem;">📥 Download File</button>
+                    </div>
+                </div>
+
+                <!-- Debug console for troubleshooting -->
+                <div id="collectorDebug" class="debug-box hidden" style="margin-top: 15px;">
+                    <div style="color: #fbbf24; font-weight: bold; margin-bottom: 8px;">🔧 Debug Console</div>
+                    <div id="debugOutput"></div>
                 </div>
             </div>
         </div>
@@ -321,22 +328,10 @@
 
             <!-- Stats -->
             <div class="stats-grid">
-                <div class="stat-card">
-                    <h3 id="totalOps">0</h3>
-                    <p>Total Operations</p>
-                </div>
-                <div class="stat-card">
-                    <h3 id="majorOps">0</h3>
-                    <p>Major Surgeries</p>
-                </div>
-                <div class="stat-card">
-                    <h3 id="minorOps">0</h3>
-                    <p>Minor Surgeries</p>
-                </div>
-                <div class="stat-card">
-                    <h3 id="thisMonth">0</h3>
-                    <p>This Month</p>
-                </div>
+                <div class="stat-card"><h3 id="totalOps">0</h3><p>Total Operations</p></div>
+                <div class="stat-card"><h3 id="majorOps">0</h3><p>Major Surgeries</p></div>
+                <div class="stat-card"><h3 id="minorOps">0</h3><p>Minor Surgeries</p></div>
+                <div class="stat-card"><h3 id="thisMonth">0</h3><p>This Month</p></div>
             </div>
 
             <!-- Tabs -->
@@ -355,96 +350,22 @@
                     <h2 style="margin-bottom: 20px; color: #1e3a5f;">New Operation Entry</h2>
                     <form id="surgeryForm" onsubmit="saveSurgeonEntry(event)">
                         <div class="form-grid">
-                            <div class="form-group">
-                                <label>Date of Surgery <span class="required">*</span></label>
-                                <input type="text" id="sSurgeryDate" placeholder="DD/MM/YY" required maxlength="8">
-                            </div>
-                            <div class="form-group">
-                                <label>Patient ID <span class="required">*</span></label>
-                                <input type="text" id="sPatientId" placeholder="e.g., PT-2024-001" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Patient Name</label>
-                                <input type="text" id="sPatientName" placeholder="Full name">
-                            </div>
-                            <div class="form-group">
-                                <label>Age</label>
-                                <input type="number" id="sAge" placeholder="Years" min="0" max="150">
-                            </div>
-                            <div class="form-group">
-                                <label>Gender</label>
-                                <select id="sGender">
-                                    <option value="">Select</option>
-                                    <option value="Male">Male</option>
-                                    <option value="Female">Female</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Case Type</label>
-                                <select id="sCaseType">
-                                    <option value="Elective">Elective</option>
-                                    <option value="Emergency">Emergency</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Surgery Type</label>
-                                <select id="sSurgeryType">
-                                    <option value="Major" selected>Major</option>
-                                    <option value="Minor">Minor</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Procedure Name <span class="required">*</span></label>
-                                <input type="text" id="sProcedure" placeholder="e.g., Laparoscopic Cholecystectomy" required>
-                            </div>
-                            <div class="form-group">
-                                <label>Diagnosis</label>
-                                <input type="text" id="sDiagnosis" placeholder="e.g., Acute Cholecystitis">
-                            </div>
-                            <div class="form-group">
-                                <label>Surgeon Name</label>
-                                <input type="text" id="sSurgeon" placeholder="Your name">
-                            </div>
-                            <div class="form-group">
-                                <label>Role</label>
-                                <select id="sRole">
-                                    <option value="Independently Performed">Independently Performed</option>
-                                    <option value="Performed Under Supervision">Performed Under Supervision</option>
-                                    <option value="Camera Operator">Camera Operator</option>
-                                    <option value="Assisted">Assisted</option>
-                                    <option value="Observed">Observed</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Anesthesia Type</label>
-                                <select id="sAnesthesia">
-                                    <option value="GA">General Anesthesia</option>
-                                    <option value="Spinal">Spinal</option>
-                                    <option value="Epidural">Epidural</option>
-                                    <option value="Local">Local</option>
-                                    <option value="Sedation">Sedation</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Outcome</label>
-                                <select id="sOutcome">
-                                    <option value="Successful">Successful</option>
-                                    <option value="Complicated">Complicated</option>
-                                    <option value="Converted">Converted to Open</option>
-                                    <option value="Aborted">Aborted</option>
-                                </select>
-                            </div>
+                            <div class="form-group"><label>Date of Surgery <span class="required">*</span></label><input type="text" id="sSurgeryDate" placeholder="DD/MM/YY" required maxlength="8"></div>
+                            <div class="form-group"><label>Patient ID <span class="required">*</span></label><input type="text" id="sPatientId" placeholder="e.g., PT-2024-001" required></div>
+                            <div class="form-group"><label>Patient Name</label><input type="text" id="sPatientName" placeholder="Full name"></div>
+                            <div class="form-group"><label>Age</label><input type="number" id="sAge" placeholder="Years" min="0" max="150"></div>
+                            <div class="form-group"><label>Gender</label><select id="sGender"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
+                            <div class="form-group"><label>Case Type</label><select id="sCaseType"><option value="Elective">Elective</option><option value="Emergency">Emergency</option></select></div>
+                            <div class="form-group"><label>Surgery Type</label><select id="sSurgeryType"><option value="Major" selected>Major</option><option value="Minor">Minor</option></select></div>
+                            <div class="form-group"><label>Procedure Name <span class="required">*</span></label><input type="text" id="sProcedure" placeholder="e.g., Laparoscopic Cholecystectomy" required></div>
+                            <div class="form-group"><label>Diagnosis</label><input type="text" id="sDiagnosis" placeholder="e.g., Acute Cholecystitis"></div>
+                            <div class="form-group"><label>Surgeon Name</label><input type="text" id="sSurgeon" placeholder="Your name"></div>
+                            <div class="form-group"><label>Role</label><select id="sRole"><option value="Independently Performed">Independently Performed</option><option value="Performed Under Supervision">Performed Under Supervision</option><option value="Camera Operator">Camera Operator</option><option value="Assisted">Assisted</option><option value="Observed">Observed</option></select></div>
+                            <div class="form-group"><label>Anesthesia Type</label><select id="sAnesthesia"><option value="GA">General Anesthesia</option><option value="Spinal">Spinal</option><option value="Epidural">Epidural</option><option value="Local">Local</option><option value="Sedation">Sedation</option></select></div>
+                            <div class="form-group"><label>Outcome</label><select id="sOutcome"><option value="Successful">Successful</option><option value="Complicated">Complicated</option><option value="Converted">Converted to Open</option><option value="Aborted">Aborted</option></select></div>
                         </div>
-
-                        <div class="form-group" style="margin-top: 15px;">
-                            <label>Notes / Complications</label>
-                            <textarea id="sNotes" placeholder="Any complications, special notes, follow-up required..."></textarea>
-                        </div>
-
-                        <div class="btn-group">
-                            <button type="submit" class="btn btn-primary">💾 Save Entry</button>
-                            <button type="reset" class="btn btn-secondary">Clear Form</button>
-                        </div>
+                        <div class="form-group" style="margin-top: 15px;"><label>Notes / Complications</label><textarea id="sNotes" placeholder="Any complications, special notes, follow-up required..."></textarea></div>
+                        <div class="btn-group"><button type="submit" class="btn btn-primary">💾 Save Entry</button><button type="reset" class="btn btn-secondary">Clear Form</button></div>
                     </form>
                 </div>
             </div>
@@ -456,31 +377,12 @@
                         <h2 style="color: #1e3a5f;">Operation Logs</h2>
                         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                             <input type="text" id="searchLogs" placeholder="Search..." onkeyup="renderLogs()" style="width: 200px; margin: 0;">
-                            <select id="filterType" onchange="renderLogs()" style="width: 150px; margin: 0;">
-                                <option value="">All Types</option>
-                                <option value="Elective">Elective</option>
-                                <option value="Emergency">Emergency</option>
-                            </select>
+                            <select id="filterType" onchange="renderLogs()" style="width: 150px; margin: 0;"><option value="">All Types</option><option value="Elective">Elective</option><option value="Emergency">Emergency</option></select>
                         </div>
                     </div>
                     <div style="overflow-x: auto;">
                         <table id="logsTable">
-                            <thead>
-                                <tr>
-                                    <th>Surgery Date</th>
-                                    <th>Patient ID</th>
-                                    <th>Name</th>
-                                    <th>Age/Gender</th>
-                                    <th>Procedure</th>
-                                    <th>Type</th>
-                                    <th>Surgery</th>
-                                    <th>Role</th>
-                                    <th>Outcome</th>
-                                    <th>Source</th>
-                                    <th>Entry Date</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
+                            <thead><tr><th>Surgery Date</th><th>Patient ID</th><th>Name</th><th>Age/Gender</th><th>Procedure</th><th>Type</th><th>Surgery</th><th>Role</th><th>Outcome</th><th>Source</th><th>Entry Date</th><th>Actions</th></tr></thead>
                             <tbody id="logsBody"></tbody>
                         </table>
                     </div>
@@ -494,9 +396,20 @@
                     <h2 style="margin-bottom: 20px; color: #1e3a5f;">📥 Import Collector Data</h2>
 
                     <div class="alert alert-info">
-                        <strong>How it works:</strong> Collectors download encrypted files from their device. You import them here using your encryption key to decrypt.
+                        <strong>How it works:</strong> Collectors can submit directly to Drive or download encrypted files. Import them here.
                     </div>
 
+                    <div style="margin-top: 20px; padding: 20px; background: #f0f9ff; border-radius: 10px; border: 1px solid #bae6fd; margin-bottom: 20px;">
+                        <h4 style="color: #0369a1; margin-bottom: 10px;">☁️ Import from Drive (Direct)</h4>
+                        <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 10px;">
+                            Collectors submit directly to Drive. Load all their submissions here without handling files.
+                        </p>
+                        <button class="btn btn-primary" onclick="loadCollectorSubmissionsFromDrive()">📥 Load Collector Submissions from Drive</button>
+                    </div>
+
+                    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+
+                    <h4 style="margin-bottom: 15px; color: #1e3a5f;">📁 Import from File (Offline/Backup)</h4>
                     <div class="form-group">
                         <label>Select encrypted collector file(s)</label>
                         <input type="file" id="collectorFiles" accept=".json" multiple onchange="previewCollectorFiles()">
@@ -508,16 +421,6 @@
                         <button class="btn btn-success" onclick="importCollectorFiles()" style="margin-top: 15px;">📥 Import & Decrypt All</button>
                     </div>
 
-                    <div style="margin-top: 25px; padding: 20px; background: #f0f9ff; border-radius: 10px; border: 1px solid #bae6fd;">
-                        <h4 style="color: #0369a1; margin-bottom: 10px;">☁️ Import from Drive</h4>
-                        <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 10px;">
-                            Collectors can now submit directly to Drive. Load all their submissions here without handling files.
-                        </p>
-                        <button class="btn btn-primary" onclick="loadCollectorSubmissionsFromDrive()">
-                            📥 Load Collector Submissions from Drive
-                        </button>
-                    </div>
-
                     <div id="importResults" class="hidden" style="margin-top: 15px;"></div>
                 </div>
             </div>
@@ -526,27 +429,20 @@
             <div id="shareTab" class="tab-content">
                 <div class="panel">
                     <h2 style="margin-bottom: 20px; color: #1e3a5f;">🔗 Share Collector Link</h2>
-
-                    <div class="alert alert-info">
-                        <strong>Share this link with your data collectors.</strong> They will go directly to the data entry form without seeing any other options.
-                    </div>
-
+                    <div class="alert alert-info"><strong>Share this link with your data collectors.</strong> They will go directly to the data entry form.</div>
                     <div class="share-box">
                         <p><strong>Collector Entry Link</strong></p>
                         <div class="share-url" id="shareableLink">Generating...</div>
                         <button class="copy-btn" onclick="copyLink()">📋 Copy Link</button>
                     </div>
-
                     <div style="margin-top: 20px; padding: 15px; background: #fef3c7; border-radius: 8px; border: 1px solid #fbbf24;">
                         <h4 style="color: #92400e; margin-bottom: 8px;">⚠️ Security Notes</h4>
                         <ul style="color: #92400e; padding-left: 20px; font-size: 0.9rem;">
                             <li>Collectors cannot access your data or the surgeon interface</li>
                             <li>They can only add new entries and download encrypted files</li>
                             <li>All data is encrypted before leaving their device</li>
-                            <li>They cannot navigate back to this admin page</li>
                         </ul>
                     </div>
-
                     <div style="margin-top: 20px;">
                         <h4 style="margin-bottom: 10px;">QR Code for Mobile Collectors</h4>
                         <div id="qrcode" style="padding: 20px; background: white; display: inline-block; border-radius: 8px; border: 1px solid #e2e8f0;">
@@ -561,22 +457,11 @@
             <div id="exportTab" class="tab-content">
                 <div class="panel">
                     <h2 style="margin-bottom: 20px; color: #1e3a5f;">Export Data</h2>
-
-                    <div class="alert alert-success">
-                        <strong>Privacy Note:</strong> Exported files are decrypted. Store them securely.
-                    </div>
-
+                    <div class="alert alert-success"><strong>Privacy Note:</strong> Exported files are decrypted. Store them securely.</div>
                     <div class="form-grid" style="margin-bottom: 20px;">
-                        <div class="form-group">
-                            <label>Date Range From</label>
-                            <input type="date" id="exportFrom">
-                        </div>
-                        <div class="form-group">
-                            <label>Date Range To</label>
-                            <input type="date" id="exportTo">
-                        </div>
+                        <div class="form-group"><label>Date Range From</label><input type="date" id="exportFrom"></div>
+                        <div class="form-group"><label>Date Range To</label><input type="date" id="exportTo"></div>
                     </div>
-
                     <div class="btn-group">
                         <button class="btn btn-success" onclick="exportCSV()">📄 Export as CSV</button>
                         <button class="btn btn-success" onclick="exportExcel()">📊 Export as Excel</button>
@@ -589,18 +474,13 @@
             <div id="settingsTab" class="tab-content">
                 <div class="panel">
                     <h2 style="margin-bottom: 20px; color: #1e3a5f;">Settings</h2>
-
-                    <div class="alert alert-warning">
-                        <strong>⚠️ Important:</strong> Your encryption key is: <span id="currentKeyDisplay" style="font-family: monospace; background: #fef3c7; padding: 2px 6px; border-radius: 4px;">Not set</span>
-                    </div>
-
+                    <div class="alert alert-warning"><strong>⚠️ Important:</strong> Your encryption key is: <span id="currentKeyDisplay" style="font-family: monospace; background: #fef3c7; padding: 2px 6px; border-radius: 4px;">Not set</span></div>
                     <div class="form-group">
                         <label>Change Encryption Key</label>
                         <input type="text" id="newKey" class="key-input" placeholder="New encryption key (min 8 chars)">
                         <button class="btn btn-warning" onclick="changeKey()" style="margin-top: 10px;">⚠️ Change Key & Re-encrypt All Data</button>
                         <p style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">This will re-encrypt all existing data with the new key.</p>
                     </div>
-
                     <div style="margin-top: 25px; padding: 20px; background: #fee2e2; border-radius: 10px; border: 1px solid #fca5a5;">
                         <h3 style="color: #991b1b; margin-bottom: 10px;">⚠️ Danger Zone</h3>
                         <button class="btn btn-danger" onclick="clearAllData()">🗑️ Clear All Local Data</button>
@@ -613,34 +493,43 @@
     <!-- View Modal -->
     <div id="viewModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2>Operation Details</h2>
-                <button class="close-btn" onclick="closeModal()">&times;</button>
-            </div>
+            <div class="modal-header"><h2>Operation Details</h2><button class="close-btn" onclick="closeModal()">&times;</button></div>
             <div id="modalBody"></div>
         </div>
     </div>
 
     <script>
         // ==================== APPS SCRIPT CONFIG ====================
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyPM9r0yzXZz8Dw9YS3I-XM8mE5VAB7aLjqJa7D-PVfSi8DdfGii6ZUN691cpJCTOlEvQ/exec';
-        const SURGEON_PASSWORD = 'ChangeThisToYourSecretPassword123'; // Must match Apps Script
-        const COLLECTOR_SECRET = 'COLLECTOR_SUBMIT_2024'; // Must match Apps Script
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxqzCsggoBE7YEFaqVIyqLdtJzSc19rkZ7jxyZG6plYyYqDBJ6HUMwvv6RD9ChCGNOM/exec';
+        const SURGEON_PASSWORD = 'ChangeThisToYourSecretPassword123';
+        const COLLECTOR_SECRET = 'COLLECTOR_SUBMIT_2024';
 
         // ==================== STATE ====================
         let currentRole = 'surgeon';
         let encryptionKey = null;
-        let selectedDriveFile = null;
         const STORAGE_KEY = 'surgical_log_data';
         const KEY_STORAGE = 'surgical_log_key_hash';
         const COLLECTOR_STORAGE = 'surgical_log_collector';
         const COLLECTOR_KEY = 'SURGICAL_LOG_COLLECTOR_TEMP_KEY_2024';
 
-        // ==================== AUTO-DETECT COLLECTOR MODE FROM URL ====================
+        // ==================== DEBUG ====================
+        function debug(msg, type = 'info') {
+            const debugBox = document.getElementById('collectorDebug');
+            const debugOutput = document.getElementById('debugOutput');
+            if (!debugBox || !debugOutput) return;
+            debugBox.classList.remove('hidden');
+            const color = type === 'error' ? 'debug-error' : type === 'success' ? 'debug-success' : 'debug-info';
+            const line = document.createElement('div');
+            line.className = color;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            debugOutput.appendChild(line);
+            debugOutput.scrollTop = debugOutput.scrollHeight;
+        }
+
+        // ==================== AUTO-DETECT COLLECTOR MODE ====================
         function checkCollectorMode() {
             const urlParams = new URLSearchParams(window.location.search);
-            const mode = urlParams.get('mode');
-            if (mode === 'collector') {
+            if (urlParams.get('mode') === 'collector') {
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('collectorApp').classList.remove('hidden');
                 document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
@@ -651,18 +540,13 @@
 
         function getTodayDDMMYY() {
             const d = new Date();
-            const day = String(d.getDate()).padStart(2, '0');
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const year = String(d.getFullYear()).slice(-2);
-            return `${day}/${month}/${year}`;
+            return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(-2)}`;
         }
 
-        // ==================== ENCRYPTION UTILITIES ====================
+        // ==================== ENCRYPTION ====================
         async function deriveKey(password, salt) {
             const encoder = new TextEncoder();
-            const keyMaterial = await crypto.subtle.importKey(
-                'raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']
-            );
+            const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']);
             return crypto.subtle.deriveKey(
                 { name: 'PBKDF2', salt: salt, iterations: 100000, hash: 'SHA-256' },
                 keyMaterial, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
@@ -674,15 +558,8 @@
             const salt = crypto.getRandomValues(new Uint8Array(16));
             const iv = crypto.getRandomValues(new Uint8Array(12));
             const key = await deriveKey(password, salt);
-            const encrypted = await crypto.subtle.encrypt(
-                { name: 'AES-GCM', iv: iv }, key, encoder.encode(JSON.stringify(data))
-            );
-            return {
-                salt: Array.from(salt), iv: Array.from(iv),
-                data: Array.from(new Uint8Array(encrypted)),
-                version: 1,
-                createdAt: new Date().toISOString()
-            };
+            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, encoder.encode(JSON.stringify(data)));
+            return { salt: Array.from(salt), iv: Array.from(iv), data: Array.from(new Uint8Array(encrypted)), version: 1, createdAt: new Date().toISOString() };
         }
 
         async function decryptData(encryptedObj, password) {
@@ -691,33 +568,27 @@
                 const iv = new Uint8Array(encryptedObj.iv);
                 const data = new Uint8Array(encryptedObj.data);
                 const key = await deriveKey(password, salt);
-                const decrypted = await crypto.subtle.decrypt(
-                    { name: 'AES-GCM', iv: iv }, key, data
-                );
+                const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, data);
                 return JSON.parse(new TextDecoder().decode(decrypted));
             } catch (e) { 
-                console.error('Decryption failed:', e);
+                debug('Decryption failed: ' + e.message, 'error');
                 return null; 
             }
         }
 
-        // ==================== KEY MANAGEMENT ====================
         async function hashKey(key) {
-            const encoder = new TextEncoder();
-            const hash = await crypto.subtle.digest('SHA-256', encoder.encode(key));
+            const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
             return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
         async function verifyKey(key) {
             const storedHash = localStorage.getItem(KEY_STORAGE);
             if (!storedHash) return true;
-            const currentHash = await hashKey(key);
-            return currentHash === storedHash;
+            return (await hashKey(key)) === storedHash;
         }
 
         async function storeKeyHash(key) {
-            const hash = await hashKey(key);
-            localStorage.setItem(KEY_STORAGE, hash);
+            localStorage.setItem(KEY_STORAGE, await hashKey(key));
         }
 
         // ==================== ROLE SELECTION ====================
@@ -725,46 +596,28 @@
             currentRole = role;
             document.querySelectorAll('.role-btn').forEach(btn => btn.classList.remove('active'));
             document.getElementById(role === 'surgeon' ? 'btnSurgeon' : 'btnCollector').classList.add('active');
-
-            if (role === 'surgeon') {
-                document.getElementById('surgeonLogin').classList.remove('hidden');
-                document.getElementById('collectorLogin').classList.add('hidden');
-            } else {
-                document.getElementById('surgeonLogin').classList.add('hidden');
-                document.getElementById('collectorLogin').classList.remove('hidden');
-            }
+            document.getElementById('surgeonLogin').classList.toggle('hidden', role !== 'surgeon');
+            document.getElementById('collectorLogin').classList.toggle('hidden', role !== 'collector');
         }
 
-        // ==================== SURGEON LOGIN ====================
+        // ==================== LOGIN / LOGOUT ====================
         async function surgeonLogin() {
             const key = document.getElementById('surgeonKey').value;
-            if (!key || key.length < 8) { 
-                alert('Encryption key must be at least 8 characters'); 
-                return; 
-            }
-
-            const valid = await verifyKey(key);
-            if (!valid) { 
-                alert('Wrong encryption key! This key does not match previously stored data.'); 
-                return; 
-            }
+            if (!key || key.length < 8) { alert('Encryption key must be at least 8 characters'); return; }
+            if (!(await verifyKey(key))) { alert('Wrong encryption key!'); return; }
 
             encryptionKey = key;
             await storeKeyHash(key);
-
             document.getElementById('loginScreen').classList.add('hidden');
             document.getElementById('surgeonApp').classList.remove('hidden');
             document.getElementById('currentKeyDisplay').textContent = key.substring(0, 4) + '****' + key.substring(key.length - 4);
-
             generateShareableLink();
             drawQRCode();
-
             updateStats();
             renderLogs();
             document.getElementById('sSurgeryDate').value = getTodayDDMMYY();
         }
 
-        // ==================== COLLECTOR LOGIN ====================
         async function collectorLogin() {
             document.getElementById('loginScreen').classList.add('hidden');
             document.getElementById('collectorApp').classList.remove('hidden');
@@ -781,132 +634,99 @@
             document.getElementById('drivePanel').classList.add('hidden');
         }
 
+        function collectorGoBack() {
+            document.getElementById('collectorApp').classList.add('hidden');
+            document.getElementById('loginScreen').classList.remove('hidden');
+            selectRole('surgeon');
+        }
+
         // ==================== SHAREABLE LINK ====================
         function generateShareableLink() {
-            const collectorUrl = 'https://shariq0712-ops.github.io/surgilogger/?mode=collector';
-            document.getElementById('shareableLink').textContent = collectorUrl;
+            document.getElementById('shareableLink').textContent = 'https://shariq0712-ops.github.io/surgilogger/?mode=collector';
         }
 
         function copyLink() {
-            const link = document.getElementById('shareableLink').textContent;
-            navigator.clipboard.writeText(link).then(() => {
-                alert('✅ Link copied to clipboard!');
-            });
+            navigator.clipboard.writeText(document.getElementById('shareableLink').textContent).then(() => alert('✅ Link copied!'));
         }
 
         function drawQRCode() {
             const canvas = document.getElementById('qrCanvas');
             const ctx = canvas.getContext('2d');
-            const link = 'https://shariq0712-ops.github.io/surgilogger/?mode=collector';
-
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, 200, 200);
+            ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 200, 200);
             ctx.fillStyle = '#1e3a5f';
-
-            function drawFinder(x, y) {
-                ctx.fillRect(x, y, 42, 42);
-                ctx.clearRect(x + 6, y + 6, 30, 30);
-                ctx.fillRect(x + 12, y + 12, 18, 18);
-            }
-
-            drawFinder(10, 10);
-            drawFinder(148, 10);
-            drawFinder(10, 148);
-
-            ctx.fillStyle = '#1e3a5f';
+            function drawFinder(x, y) { ctx.fillRect(x, y, 42, 42); ctx.clearRect(x+6, y+6, 30, 30); ctx.fillRect(x+12, y+12, 18, 18); }
+            drawFinder(10, 10); drawFinder(148, 10); drawFinder(10, 148);
             for (let i = 0; i < 200; i++) {
                 const x = Math.floor(Math.random() * 140) + 30;
                 const y = Math.floor(Math.random() * 140) + 30;
                 if ((x < 60 && y < 60) || (x > 140 && y < 60) || (x < 60 && y > 140)) continue;
                 ctx.fillRect(x, y, 3, 3);
             }
-
-            ctx.fillStyle = '#64748b';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'center';
+            ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
             ctx.fillText('Scan to open collector form', 100, 195);
         }
 
         // ==================== DATA OPERATIONS ====================
         async function getData() {
             const stored = localStorage.getItem(STORAGE_KEY);
-            if (!stored) return [];
-            if (!encryptionKey) return [];
+            if (!stored || !encryptionKey) return [];
             return await decryptData(JSON.parse(stored), encryptionKey) || [];
         }
 
         async function saveData(data) {
             if (!encryptionKey) { alert('No encryption key set'); return; }
-            const encrypted = await encryptData(data, encryptionKey);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(encrypted));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(await encryptData(data, encryptionKey)));
             updateSyncStatus('local');
         }
 
-        // ==================== APPS SCRIPT BACKEND ====================
+        // ==================== SURGEON DRIVE OPERATIONS ====================
         async function saveToDrive() {
-            if (!encryptionKey) { alert('Please login as surgeon first'); return; }
-
+            if (!encryptionKey) { alert('Login first'); return; }
             const data = await getData();
             if (data.length === 0) { alert('No data to backup'); return; }
 
-            const encrypted = await encryptData(data, encryptionKey);
-
             document.getElementById('uploadProgress').classList.remove('hidden');
             document.getElementById('progressFill').style.width = '30%';
-            document.getElementById('uploadStatus').textContent = 'Encrypting data...';
+            document.getElementById('uploadStatus').textContent = 'Encrypting...';
 
             try {
+                const encrypted = await encryptData(data, encryptionKey);
                 document.getElementById('progressFill').style.width = '60%';
-                document.getElementById('uploadStatus').textContent = 'Uploading to Drive...';
+                document.getElementById('uploadStatus').textContent = 'Uploading...';
 
                 const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    redirect: 'follow',
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8',
-                    },
-                    body: JSON.stringify({
-                        action: 'save',
-                        password: SURGEON_PASSWORD,
-                        encryptedData: encrypted
-                    })
+                    method: 'POST', redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'save', password: SURGEON_PASSWORD, encryptedData: encrypted })
                 });
-
                 const result = await response.json();
 
                 if (result.success) {
                     document.getElementById('progressFill').style.width = '100%';
-                    document.getElementById('uploadStatus').textContent = '✅ Backup saved to Google Drive!';
+                    document.getElementById('uploadStatus').textContent = '✅ Saved to Drive!';
                     updateSyncStatus('synced');
-                    setTimeout(() => {
-                        document.getElementById('uploadProgress').classList.add('hidden');
-                        document.getElementById('progressFill').style.width = '0%';
-                    }, 3000);
-                } else {
-                    throw new Error(result.message || 'Unknown error');
-                }
+                    setTimeout(() => { document.getElementById('uploadProgress').classList.add('hidden'); document.getElementById('progressFill').style.width = '0%'; }, 3000);
+                } else throw new Error(result.message);
             } catch (err) {
                 document.getElementById('uploadProgress').classList.add('hidden');
                 alert('❌ Save failed: ' + err.message);
-                console.error(err);
             }
         }
 
         async function loadFromDrive() {
-            if (!encryptionKey) { alert('Please login as surgeon first'); return; }
-
-            if (!confirm('⚠️ This will REPLACE your local data with the Drive backup. Continue?')) return;
+            if (!encryptionKey) { alert('Login first'); return; }
+            if (!confirm('⚠️ Replace local data with Drive backup?')) return;
 
             document.getElementById('uploadProgress').classList.remove('hidden');
             document.getElementById('progressFill').style.width = '30%';
-            document.getElementById('uploadStatus').textContent = 'Fetching from Drive...';
+            document.getElementById('uploadStatus').textContent = 'Fetching...';
 
             try {
                 const response = await fetch(APPS_SCRIPT_URL + '?action=get');
                 const encryptedData = await response.json();
 
                 if (!encryptedData.data || encryptedData.data.length === 0) {
-                    alert('No data in Drive yet (empty database)');
+                    alert('No data in Drive');
                     document.getElementById('uploadProgress').classList.add('hidden');
                     return;
                 }
@@ -915,79 +735,27 @@
                 document.getElementById('uploadStatus').textContent = 'Decrypting...';
 
                 const decrypted = await decryptData(encryptedData, encryptionKey);
-                if (!decrypted) {
-                    alert('❌ Cannot decrypt — wrong encryption key or corrupted data');
-                    document.getElementById('uploadProgress').classList.add('hidden');
-                    return;
-                }
-
-                document.getElementById('progressFill').style.width = '90%';
+                if (!decrypted) { alert('Wrong key or corrupted data'); document.getElementById('uploadProgress').classList.add('hidden'); return; }
 
                 await saveData(decrypted);
-
                 document.getElementById('progressFill').style.width = '100%';
-                document.getElementById('uploadStatus').textContent = `✅ Loaded ${decrypted.length} records from Drive`;
+                document.getElementById('uploadStatus').textContent = `✅ Loaded ${decrypted.length} records`;
                 updateSyncStatus('synced');
-                updateStats();
-                renderLogs();
-
-                setTimeout(() => {
-                    document.getElementById('uploadProgress').classList.add('hidden');
-                    document.getElementById('progressFill').style.width = '0%';
-                }, 3000);
-
+                updateStats(); renderLogs();
+                setTimeout(() => { document.getElementById('uploadProgress').classList.add('hidden'); document.getElementById('progressFill').style.width = '0%'; }, 3000);
             } catch (err) {
                 document.getElementById('uploadProgress').classList.add('hidden');
                 alert('❌ Load failed: ' + err.message);
-                console.error(err);
             }
         }
 
-        // ==================== SURGEON ENTRY ====================
-        async function saveSurgeonEntry(e) {
-            e.preventDefault();
-            const entry = {
-                id: Date.now().toString(),
-                surgeryDate: document.getElementById('sSurgeryDate').value,
-                patientId: document.getElementById('sPatientId').value,
-                patientName: document.getElementById('sPatientName').value,
-                age: document.getElementById('sAge').value,
-                gender: document.getElementById('sGender').value,
-                caseType: document.getElementById('sCaseType').value,
-                surgeryType: document.getElementById('sSurgeryType').value,
-                procedure: document.getElementById('sProcedure').value,
-                diagnosis: document.getElementById('sDiagnosis').value,
-                surgeon: document.getElementById('sSurgeon').value,
-                role: document.getElementById('sRole').value,
-                anesthesia: document.getElementById('sAnesthesia').value,
-                outcome: document.getElementById('sOutcome').value,
-                notes: document.getElementById('sNotes').value,
-                entryDate: new Date().toISOString(),
-                source: 'surgeon'
-            };
-
-            const data = await getData();
-            data.push(entry);
-            await saveData(data);
-
-            alert('✅ Entry saved!');
-            document.getElementById('surgeryForm').reset();
-            document.getElementById('sSurgeryDate').value = getTodayDDMMYY();
-            updateStats();
-            renderLogs();
-        }
-
-        // ==================== COLLECTOR ENTRY (Unified for Submit and Next) ====================
-        async function saveCollectorEntry(e) {
-            if (e) e.preventDefault();
-            await collectorSubmit(false); // false = don't clear form (Submit keeps form for editing)
-        }
-
-        async function collectorNext() {
-            await collectorSubmit(true); // true = clear form for next entry
-        }
+        // ==================== COLLECTOR OPERATIONS ====================
+        let collectorEntries = [];
+        let currentCollectorIndex = -1;
 
         async function collectorSubmit(shouldClearForm) {
+            debug('Starting collectorSubmit, clearForm=' + shouldClearForm);
+
             const entry = {
                 id: Date.now().toString(),
                 surgeryDate: document.getElementById('cSurgeryDate').value,
@@ -1009,7 +777,6 @@
                 collectorDevice: navigator.userAgent.substring(0, 50)
             };
 
-            // Validate required fields
             if (!entry.surgeryDate || !entry.patientId || !entry.procedure) {
                 alert('Please fill in required fields: Date, Patient ID, and Procedure');
                 return;
@@ -1017,6 +784,7 @@
 
             collectorEntries.push(entry);
             currentCollectorIndex = collectorEntries.length - 1;
+            debug('Entry saved locally. Total entries: ' + collectorEntries.length, 'success');
 
             // Save to localStorage
             await saveCollectorEntriesToStorage();
@@ -1025,7 +793,8 @@
             document.getElementById('collectorSuccess').classList.remove('hidden');
             updateCollectorSuccessUI();
 
-            // Sync to Drive immediately
+            // Try to sync to Drive immediately
+            debug('Attempting cloud sync...');
             document.getElementById('collectorCloudStatus').textContent = '⏳ Syncing to Drive...';
             await syncCollectorToDrive();
 
@@ -1033,56 +802,184 @@
                 document.getElementById('collectorForm').reset();
                 document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
             }
-
-            updateCollectorNavButtons();
         }
 
-        async function downloadCollectorData() {
-            const stored = localStorage.getItem(COLLECTOR_STORAGE);
-            if (!stored) { alert('No data to download'); return; }
+        async function collectorNext() {
+            await collectorSubmit(true);
+        }
 
-            const blob = new Blob([stored], { type: 'application/json' });
+        async function saveCollectorEntriesToStorage() {
+            if (collectorEntries.length === 0) return;
+            const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
+            localStorage.setItem(COLLECTOR_STORAGE, JSON.stringify(encrypted));
+        }
+
+        function updateCollectorSuccessUI() {
+            const count = collectorEntries.length;
+            document.getElementById('collectorSyncStatus').innerHTML = `✅ <strong>${count}</strong> entries saved locally`;
+        }
+
+        async function syncCollectorToDrive() {
+            if (collectorEntries.length === 0) {
+                debug('No entries to sync', 'error');
+                return;
+            }
+
+            debug('Encrypting ' + collectorEntries.length + ' entries...');
+            try {
+                const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
+                debug('Encryption done. Sending to Apps Script...');
+
+                const payload = {
+                    action: 'collect',
+                    secret: COLLECTOR_SECRET,
+                    encryptedData: encrypted,
+                    device: navigator.userAgent.substring(0, 50),
+                    submissionId: Date.now().toString()
+                };
+                debug('Payload action=' + payload.action + ', secret=' + payload.secret.substring(0,5) + '...');
+
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+
+                debug('Response received, status: ' + response.status);
+                const result = await response.json();
+                debug('Result: ' + JSON.stringify(result));
+
+                if (result.success) {
+                    document.getElementById('collectorCloudStatus').innerHTML = `<span style="color: #059669;">☁️ Synced to Drive! Total submissions: ${result.submissionCount}</span>`;
+                    debug('Cloud sync SUCCESS', 'success');
+                } else {
+                    throw new Error(result.message || 'Unknown error from server');
+                }
+            } catch (err) {
+                document.getElementById('collectorCloudStatus').innerHTML = `<span style="color: #dc2626;">❌ Sync failed: ${err.message}</span>`;
+                debug('Cloud sync FAILED: ' + err.message, 'error');
+            }
+        }
+
+        async function downloadAllCollectorData() {
+            if (collectorEntries.length === 0) { 
+                const stored = localStorage.getItem(COLLECTOR_STORAGE);
+                if (stored) {
+                    const decrypted = await decryptData(JSON.parse(stored), COLLECTOR_KEY);
+                    if (decrypted && decrypted.length > 0) collectorEntries = decrypted;
+                }
+                if (collectorEntries.length === 0) { alert('No data to download'); return; }
+            }
+            const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
+            const blob = new Blob([JSON.stringify(encrypted)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `collector-data-${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `collector-data-${collectorEntries.length}-entries-${new Date().toISOString().split('T')[0]}.json`;
             a.click();
             URL.revokeObjectURL(url);
-
-            localStorage.removeItem(COLLECTOR_STORAGE);
-            document.getElementById('collectorSuccess').classList.add('hidden');
-            alert('✅ Encrypted file downloaded! Send this file to the surgeon for import.');
+            alert(`✅ ${collectorEntries.length} entries downloaded!`);
         }
 
-        // ==================== IMPORT COLLECTOR DATA ====================
+        // ==================== SURGEON: IMPORT FROM DRIVE (MERGE) ====================
+        async function loadCollectorSubmissionsFromDrive() {
+            if (!encryptionKey) { alert('Login first'); return; }
+
+            document.getElementById('uploadProgress').classList.remove('hidden');
+            document.getElementById('progressFill').style.width = '30%';
+            document.getElementById('uploadStatus').textContent = 'Fetching collector submissions...';
+
+            try {
+                const response = await fetch(APPS_SCRIPT_URL + '?action=getCollectors');
+                const data = await response.json();
+
+                if (!data.submissions || data.submissions.length === 0) {
+                    alert('No collector submissions in Drive');
+                    document.getElementById('uploadProgress').classList.add('hidden');
+                    return;
+                }
+
+                document.getElementById('progressFill').style.width = '50%';
+                document.getElementById('uploadStatus').textContent = `Found ${data.submissions.length} submission(s)...`;
+
+                let totalNew = 0;
+                let duplicatesSkipped = 0;
+                const currentData = await getData();
+                const existingIds = new Set(currentData.map(e => e.id));
+
+                for (const sub of data.submissions) {
+                    try {
+                        const collectorData = await decryptData(sub.encryptedData, COLLECTOR_KEY);
+                        if (!collectorData || !Array.isArray(collectorData)) continue;
+
+                        collectorData.forEach(entry => {
+                            if (existingIds.has(entry.id)) {
+                                duplicatesSkipped++;
+                                return;
+                            }
+                            entry.importedAt = new Date().toISOString();
+                            entry.originalSource = entry.source;
+                            entry.source = 'collector-imported';
+                            entry.submittedFromDrive = true;
+                            entry.submittedAt = sub.submittedAt;
+                            currentData.push(entry);
+                            existingIds.add(entry.id);
+                            totalNew++;
+                        });
+                    } catch (e) { console.error('Failed to decrypt submission:', e); }
+                }
+
+                document.getElementById('progressFill').style.width = '80%';
+                await saveData(currentData);
+
+                const shouldClear = confirm(
+                    `Import complete!\n\n✅ New entries: ${totalNew}\n⏭️ Duplicates skipped: ${duplicatesSkipped}\n\nClear collector queue from Drive?`
+                );
+
+                if (shouldClear) {
+                    document.getElementById('uploadStatus').textContent = 'Clearing queue...';
+                    await fetch(APPS_SCRIPT_URL, {
+                        method: 'POST', redirect: 'follow',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'clearCollectors', password: SURGEON_PASSWORD })
+                    });
+                }
+
+                document.getElementById('progressFill').style.width = '100%';
+                document.getElementById('uploadStatus').textContent = `✅ Merged ${totalNew} new entries`;
+                updateSyncStatus('pending');
+                updateStats(); renderLogs();
+                setTimeout(() => { document.getElementById('uploadProgress').classList.add('hidden'); document.getElementById('progressFill').style.width = '0%'; }, 3000);
+            } catch (err) {
+                document.getElementById('uploadProgress').classList.add('hidden');
+                alert('❌ Failed: ' + err.message);
+            }
+        }
+
+        // ==================== FILE IMPORT (MERGE) ====================
         let pendingCollectorFiles = [];
 
         function previewCollectorFiles() {
-            const input = document.getElementById('collectorFiles');
-            pendingCollectorFiles = Array.from(input.files);
-
+            pendingCollectorFiles = Array.from(document.getElementById('collectorFiles').files);
             const preview = document.getElementById('previewList');
             preview.innerHTML = '';
-
-            pendingCollectorFiles.forEach((file, i) => {
+            pendingCollectorFiles.forEach(file => {
                 const div = document.createElement('div');
                 div.style.cssText = 'padding: 8px; border-bottom: 1px solid #e2e8f0;';
                 div.innerHTML = `<strong>${file.name}</strong> <span style="color: #64748b;">(${(file.size/1024).toFixed(1)} KB)</span>`;
                 preview.appendChild(div);
             });
-
             document.getElementById('collectorPreview').classList.remove('hidden');
         }
 
         async function importCollectorFiles() {
-            if (!encryptionKey) { alert('Please login as surgeon first'); return; }
-
+            if (!encryptionKey) { alert('Login first'); return; }
             const results = document.getElementById('importResults');
             results.classList.remove('hidden');
             results.innerHTML = '<h4 style="margin-bottom: 10px;">Import Results:</h4>';
 
-            let totalImported = 0;
-            let duplicatesSkipped = 0;
+            let totalNew = 0, duplicatesSkipped = 0;
             const currentData = await getData();
             const existingIds = new Set(currentData.map(e => e.id));
 
@@ -1090,43 +987,28 @@
                 try {
                     const text = await file.text();
                     const encrypted = JSON.parse(text);
-
                     const collectorData = await decryptData(encrypted, COLLECTOR_KEY);
-                    if (!collectorData) {
-                        results.innerHTML += `<div style="color: #dc2626;">❌ ${file.name}: Could not decrypt (wrong file?)</div>`;
-                        continue;
-                    }
+                    if (!collectorData) { results.innerHTML += `<div style="color: #dc2626;">❌ ${file.name}: Could not decrypt</div>`; continue; }
 
-                    if (Array.isArray(collectorData)) {
-                        let fileNew = 0;
-                        let fileDupes = 0;
-                        collectorData.forEach(entry => {
-                            if (existingIds.has(entry.id)) {
-                                duplicatesSkipped++;
-                                fileDupes++;
-                                return;
-                            }
-                            entry.importedAt = new Date().toISOString();
-                            entry.originalSource = entry.source;
-                            entry.source = 'collector-imported';
-                            currentData.push(entry);
-                            existingIds.add(entry.id);
-                            fileNew++;
-                        });
-                        totalImported += fileNew;
-                        results.innerHTML += `<div style="color: #059669;">✅ ${file.name}: Imported ${fileNew} new entries${fileDupes > 0 ? ` (${fileDupes} duplicates skipped)` : ''}</div>`;
-                    }
-                } catch (err) {
-                    results.innerHTML += `<div style="color: #dc2626;">❌ ${file.name}: Error - ${err.message}</div>`;
-                }
+                    let fileNew = 0, fileDupes = 0;
+                    collectorData.forEach(entry => {
+                        if (existingIds.has(entry.id)) { duplicatesSkipped++; fileDupes++; return; }
+                        entry.importedAt = new Date().toISOString();
+                        entry.originalSource = entry.source;
+                        entry.source = 'collector-imported';
+                        currentData.push(entry);
+                        existingIds.add(entry.id);
+                        fileNew++;
+                    });
+                    totalNew += fileNew;
+                    results.innerHTML += `<div style="color: #059669;">✅ ${file.name}: ${fileNew} new${fileDupes > 0 ? ` (${fileDupes} dupes skipped)` : ''}</div>`;
+                } catch (err) { results.innerHTML += `<div style="color: #dc2626;">❌ ${file.name}: ${err.message}</div>`; }
             }
 
             await saveData(currentData);
             updateSyncStatus('pending');
-            updateStats();
-            renderLogs();
-
-            results.innerHTML += `<div style="margin-top: 10px; font-weight: bold;">✅ New: ${totalImported} | ⏭️ Duplicates skipped: ${duplicatesSkipped}</div>`;
+            updateStats(); renderLogs();
+            results.innerHTML += `<div style="margin-top: 10px; font-weight: bold;">✅ New: ${totalNew} | ⏭️ Dupes skipped: ${duplicatesSkipped}</div>`;
             pendingCollectorFiles = [];
             document.getElementById('collectorFiles').value = '';
             document.getElementById('collectorPreview').classList.add('hidden');
@@ -1136,52 +1018,36 @@
         async function deleteEntry(id) {
             if (!confirm('Delete this record?')) return;
             const data = await getData();
-            const filtered = data.filter(e => e.id !== id);
-            await saveData(filtered);
-            updateStats();
-            renderLogs();
+            await saveData(data.filter(e => e.id !== id));
+            updateStats(); renderLogs();
         }
 
         async function viewEntry(id) {
             const data = await getData();
             const entry = data.find(e => e.id === id);
             if (!entry) return;
-
-            const sourceBadge = entry.source === 'collector-imported' 
-                ? '<span class="badge badge-elective">From Collector</span>' 
-                : '<span class="badge badge-elective">Surgeon</span>';
-
+            const sourceBadge = entry.source === 'collector-imported' ? '<span class="badge badge-elective">From Collector</span>' : '<span class="badge badge-elective">Surgeon</span>';
             document.getElementById('modalBody').innerHTML = `
                 <div class="form-grid">
-                    <div><strong>Date of Surgery:</strong> ${entry.surgeryDate}</div>
-                    <div><strong>Patient ID:</strong> ${entry.patientId}</div>
-                    <div><strong>Patient Name:</strong> ${entry.patientName || 'N/A'}</div>
-                    <div><strong>Age:</strong> ${entry.age || 'N/A'}</div>
-                    <div><strong>Gender:</strong> ${entry.gender || 'N/A'}</div>
-                    <div><strong>Case Type:</strong> <span class="badge badge-${entry.caseType.toLowerCase()}">${entry.caseType}</span></div>
-                    <div><strong>Surgery Type:</strong> <span class="badge badge-${entry.surgeryType.toLowerCase()}">${entry.surgeryType}</span></div>
-                    <div><strong>Procedure:</strong> ${entry.procedure}</div>
-                    <div><strong>Diagnosis:</strong> ${entry.diagnosis || 'N/A'}</div>
-                    <div><strong>Surgeon:</strong> ${entry.surgeon || 'N/A'}</div>
-                    <div><strong>Role:</strong> ${entry.role || 'N/A'}</div>
-                    <div><strong>Anesthesia:</strong> ${entry.anesthesia}</div>
+                    <div><strong>Date:</strong> ${entry.surgeryDate}</div><div><strong>Patient ID:</strong> ${entry.patientId}</div>
+                    <div><strong>Name:</strong> ${entry.patientName || 'N/A'}</div><div><strong>Age:</strong> ${entry.age || 'N/A'}</div>
+                    <div><strong>Gender:</strong> ${entry.gender || 'N/A'}</div><div><strong>Case:</strong> <span class="badge badge-${entry.caseType.toLowerCase()}">${entry.caseType}</span></div>
+                    <div><strong>Type:</strong> <span class="badge badge-${entry.surgeryType.toLowerCase()}">${entry.surgeryType}</span></div><div><strong>Procedure:</strong> ${entry.procedure}</div>
+                    <div><strong>Diagnosis:</strong> ${entry.diagnosis || 'N/A'}</div><div><strong>Surgeon:</strong> ${entry.surgeon || 'N/A'}</div>
+                    <div><strong>Role:</strong> ${entry.role || 'N/A'}</div><div><strong>Anesthesia:</strong> ${entry.anesthesia}</div>
                     <div><strong>Outcome:</strong> ${entry.outcome}</div>
                 </div>
                 <div style="margin-top: 15px;"><strong>Notes:</strong><br>${entry.notes || 'None'}</div>
                 <div style="margin-top: 15px;"><strong>Source:</strong> ${sourceBadge}</div>
-                <div style="margin-top: 5px; color: #64748b; font-size: 0.85rem;">
-                    <strong>Entry Date:</strong> ${new Date(entry.entryDate).toLocaleString()}
-                </div>
+                <div style="margin-top: 5px; color: #64748b; font-size: 0.85rem;"><strong>Entry Date:</strong> ${new Date(entry.entryDate).toLocaleString()}</div>
                 ${entry.importedAt ? `<div style="color: #64748b; font-size: 0.85rem;"><strong>Imported:</strong> ${new Date(entry.importedAt).toLocaleString()}</div>` : ''}
             `;
             document.getElementById('viewModal').classList.add('active');
         }
 
-        function closeModal() {
-            document.getElementById('viewModal').classList.remove('active');
-        }
+        function closeModal() { document.getElementById('viewModal').classList.remove('active'); }
 
-        // ==================== UI RENDERING ====================
+        // ==================== UI ====================
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -1189,22 +1055,13 @@
             document.getElementById(tab + 'Tab').classList.add('active');
         }
 
-        function toggleDrivePanel() {
-            document.getElementById('drivePanel').classList.toggle('hidden');
-        }
+        function toggleDrivePanel() { document.getElementById('drivePanel').classList.toggle('hidden'); }
 
         function updateSyncStatus(status) {
             const el = document.getElementById('syncStatus');
-            if (status === 'synced') {
-                el.className = 'sync-status status-synced';
-                el.textContent = '● Synced to Drive';
-            } else if (status === 'pending') {
-                el.className = 'sync-status status-pending';
-                el.textContent = '● Unsaved Changes';
-            } else {
-                el.className = 'sync-status status-local';
-                el.textContent = '● Local Only';
-            }
+            if (status === 'synced') { el.className = 'sync-status status-synced'; el.textContent = '● Synced to Drive'; }
+            else if (status === 'pending') { el.className = 'sync-status status-pending'; el.textContent = '● Unsaved Changes'; }
+            else { el.className = 'sync-status status-local'; el.textContent = '● Local Only'; }
         }
 
         async function updateStats() {
@@ -1216,7 +1073,6 @@
                 const d = new Date(`20${parts[2]}-${parts[1]}-${parts[0]}`);
                 return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
             });
-
             document.getElementById('totalOps').textContent = data.length;
             document.getElementById('majorOps').textContent = data.filter(e => e.surgeryType === 'Major').length;
             document.getElementById('minorOps').textContent = data.filter(e => e.surgeryType === 'Minor').length;
@@ -1227,119 +1083,56 @@
             const data = await getData();
             const search = document.getElementById('searchLogs')?.value.toLowerCase() || '';
             const filter = document.getElementById('filterType')?.value || '';
-
             let filtered = data;
-            if (search) filtered = filtered.filter(e => 
-                Object.values(e).some(v => String(v).toLowerCase().includes(search))
-            );
+            if (search) filtered = filtered.filter(e => Object.values(e).some(v => String(v).toLowerCase().includes(search)));
             if (filter) filtered = filtered.filter(e => e.caseType === filter);
 
             const tbody = document.getElementById('logsBody');
             tbody.innerHTML = '';
-
-            if (filtered.length === 0) {
-                document.getElementById('noLogs').classList.remove('hidden');
-                return;
-            }
+            if (filtered.length === 0) { document.getElementById('noLogs').classList.remove('hidden'); return; }
             document.getElementById('noLogs').classList.add('hidden');
 
             filtered.sort((a, b) => {
-                const parseDate = (d) => {
-                    const p = d.split('/');
-                    return p.length === 3 ? new Date(`20${p[2]}-${p[1]}-${p[0]}`) : new Date(0);
-                };
+                const parseDate = (d) => { const p = d.split('/'); return p.length === 3 ? new Date(`20${p[2]}-${p[1]}-${p[0]}`) : new Date(0); };
                 return parseDate(b.surgeryDate) - parseDate(a.surgeryDate);
             });
 
             filtered.forEach(entry => {
-                const sourceLabel = entry.source === 'collector-imported' 
-                    ? '<span class="badge badge-elective">Collector</span>' 
-                    : '<span class="badge badge-elective">You</span>';
-
+                const sourceLabel = entry.source === 'collector-imported' ? '<span class="badge badge-elective">Collector</span>' : '<span class="badge badge-elective">You</span>';
                 const ageGender = [entry.age, entry.gender].filter(Boolean).join(' / ') || 'N/A';
-                const entryDateStr = entry.entryDate ? new Date(entry.entryDate).toLocaleDateString() : 'N/A';
-
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${entry.surgeryDate}</td>
-                    <td>${entry.patientId}</td>
-                    <td>${entry.patientName || '-'}</td>
-                    <td>${ageGender}</td>
-                    <td>${entry.procedure}</td>
-                    <td><span class="badge badge-${entry.caseType.toLowerCase()}">${entry.caseType}</span></td>
-                    <td><span class="badge badge-${entry.surgeryType.toLowerCase()}">${entry.surgeryType}</span></td>
-                    <td>${entry.role || '-'}</td>
-                    <td>${entry.outcome}</td>
-                    <td>${sourceLabel}</td>
-                    <td>${entryDateStr}</td>
-                    <td>
-                        <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="viewEntry('${entry.id}')">View</button>
-                        <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.85rem;" onclick="deleteEntry('${entry.id}')">Delete</button>
-                    </td>
-                `;
+                tr.innerHTML = `<td>${entry.surgeryDate}</td><td>${entry.patientId}</td><td>${entry.patientName || '-'}</td><td>${ageGender}</td><td>${entry.procedure}</td><td><span class="badge badge-${entry.caseType.toLowerCase()}">${entry.caseType}</span></td><td><span class="badge badge-${entry.surgeryType.toLowerCase()}">${entry.surgeryType}</span></td><td>${entry.role || '-'}</td><td>${entry.outcome}</td><td>${sourceLabel}</td><td>${entry.entryDate ? new Date(entry.entryDate).toLocaleDateString() : 'N/A'}</td><td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.85rem;" onclick="viewEntry('${entry.id}')">View</button> <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.85rem;" onclick="deleteEntry('${entry.id}')">Delete</button></td>`;
                 tbody.appendChild(tr);
             });
         }
 
-        // ==================== EXPORT FUNCTIONS ====================
+        // ==================== EXPORT ====================
         async function exportCSV() {
             const data = await getData();
             const filtered = filterByDateRange(data);
-            if (filtered.length === 0) { alert('No data in selected range'); return; }
-
+            if (filtered.length === 0) { alert('No data'); return; }
             const headers = ['Date of Surgery','Patient ID','Patient Name','Age','Gender','Case Type','Surgery Type','Procedure','Diagnosis','Surgeon','Role','Anesthesia','Outcome','Notes','Entry Date','Source'];
-            const rows = filtered.map(e => [
-                e.surgeryDate, e.patientId, e.patientName || '', e.age || '', e.gender || '',
-                e.caseType, e.surgeryType || '', e.procedure, e.diagnosis || '', e.surgeon || '', e.role || '',
-                e.anesthesia, e.outcome, `"${(e.notes || '').replace(/"/g, '""')}"`,
-                e.entryDate ? new Date(e.entryDate).toLocaleDateString() : '',
-                e.source
-            ]);
-
-            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-            downloadFile(csv, 'surgical-log.csv', 'text/csv');
+            const rows = filtered.map(e => [e.surgeryDate, e.patientId, e.patientName || '', e.age || '', e.gender || '', e.caseType, e.surgeryType || '', e.procedure, e.diagnosis || '', e.surgeon || '', e.role || '', e.anesthesia, e.outcome, `"${(e.notes || '').replace(/"/g, '""')}"`, e.entryDate ? new Date(e.entryDate).toLocaleDateString() : '', e.source]);
+            downloadFile([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), 'surgical-log.csv', 'text/csv');
         }
 
         async function exportExcel() {
             const data = await getData();
             const filtered = filterByDateRange(data);
-            if (filtered.length === 0) { alert('No data in selected range'); return; }
-
+            if (filtered.length === 0) { alert('No data'); return; }
             const headers = ['Date of Surgery','Patient ID','Patient Name','Age','Gender','Case Type','Surgery Type','Procedure','Diagnosis','Surgeon','Role','Anesthesia','Outcome','Notes','Entry Date','Source'];
             let html = `<table><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
-            filtered.forEach(e => {
-                html += `<tr>
-                    <td>${e.surgeryDate}</td>
-                    <td>${e.patientId}</td>
-                    <td>${e.patientName || ''}</td>
-                    <td>${e.age || ''}</td>
-                    <td>${e.gender || ''}</td>
-                    <td>${e.caseType}</td>
-                    <td>${e.surgeryType || ''}</td>
-                    <td>${e.procedure}</td>
-                    <td>${e.diagnosis || ''}</td>
-                    <td>${e.surgeon || ''}</td>
-                    <td>${e.role || ''}</td>
-                    <td>${e.anesthesia}</td>
-                    <td>${e.outcome}</td>
-                    <td>${e.notes || ''}</td>
-                    <td>${e.entryDate ? new Date(e.entryDate).toLocaleDateString() : ''}</td>
-                    <td>${e.source}</td>
-                </tr>`;
-            });
+            filtered.forEach(e => { html += `<tr><td>${e.surgeryDate}</td><td>${e.patientId}</td><td>${e.patientName || ''}</td><td>${e.age || ''}</td><td>${e.gender || ''}</td><td>${e.caseType}</td><td>${e.surgeryType || ''}</td><td>${e.procedure}</td><td>${e.diagnosis || ''}</td><td>${e.surgeon || ''}</td><td>${e.role || ''}</td><td>${e.anesthesia}</td><td>${e.outcome}</td><td>${e.notes || ''}</td><td>${e.entryDate ? new Date(e.entryDate).toLocaleDateString() : ''}</td><td>${e.source}</td></tr>`; });
             html += '</table>';
-
             const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'surgical-log.xls'; a.click(); URL.revokeObjectURL(url);
+            const a = document.createElement('a'); a.href = url; a.download = 'surgical-log.xls'; a.click(); URL.revokeObjectURL(url);
         }
 
         async function exportJSON() {
             const data = await getData();
             const encrypted = await encryptData(data, encryptionKey);
-            const json = JSON.stringify(encrypted, null, 2);
-            downloadFile(json, 'surgical-log-backup.json', 'application/json');
+            downloadFile(JSON.stringify(encrypted, null, 2), 'surgical-log-backup.json', 'application/json');
         }
 
         function filterByDateRange(data) {
@@ -1348,8 +1141,7 @@
             return data.filter(e => {
                 const parts = e.surgeryDate.split('/');
                 if (parts.length !== 3) return false;
-                const d = new Date(`20${parts[2]}-${parts[1]}-${parts[0]}`);
-                const dStr = d.toISOString().split('T')[0];
+                const dStr = new Date(`20${parts[2]}-${parts[1]}-${parts[0]}`).toISOString().split('T')[0];
                 if (from && dStr < from) return false;
                 if (to && dStr > to) return false;
                 return true;
@@ -1359,373 +1151,35 @@
         function downloadFile(content, filename, type) {
             const blob = new Blob([content], { type });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+            const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
         }
 
         // ==================== SETTINGS ====================
         async function changeKey() {
             const newKey = document.getElementById('newKey').value;
             if (!newKey || newKey.length < 8) { alert('Key must be at least 8 characters'); return; }
-
             const data = await getData();
             encryptionKey = newKey;
             await storeKeyHash(newKey);
             await saveData(data);
-
             document.getElementById('currentKeyDisplay').textContent = newKey.substring(0, 4) + '****' + newKey.substring(newKey.length - 4);
             alert('✅ Key changed and all data re-encrypted!');
             document.getElementById('newKey').value = '';
         }
 
         async function clearAllData() {
-            if (!confirm('⚠️ WARNING: This will permanently delete ALL records. Are you sure?')) return;
+            if (!confirm('⚠️ Permanently delete ALL records?')) return;
             localStorage.removeItem(STORAGE_KEY);
             localStorage.removeItem(KEY_STORAGE);
             alert('All data cleared.');
-            updateStats();
-            renderLogs();
-        }
-
-        // Close modal
-        document.getElementById('viewModal').addEventListener('click', function(e) {
-            if (e.target === this) closeModal();
-        });
-
-        // ==================== COLLECTOR NAVIGATION & CLOUD SYNC ====================
-        let collectorEntries = [];
-        let currentCollectorIndex = -1;
-        let pendingCloudSync = false;
-
-        async function collectorNext() {
-            // Save current form data to temp array
-            const entry = {
-                id: Date.now().toString(),
-                surgeryDate: document.getElementById('cSurgeryDate').value,
-                patientId: document.getElementById('cPatientId').value,
-                patientName: document.getElementById('cPatientName').value,
-                age: document.getElementById('cAge').value,
-                gender: document.getElementById('cGender').value,
-                caseType: document.getElementById('cCaseType').value,
-                surgeryType: document.getElementById('cSurgeryType').value,
-                procedure: document.getElementById('cProcedure').value,
-                diagnosis: document.getElementById('cDiagnosis').value,
-                surgeon: document.getElementById('cSurgeon').value,
-                role: document.getElementById('cRole').value,
-                anesthesia: document.getElementById('cAnesthesia').value,
-                outcome: document.getElementById('cOutcome').value,
-                notes: document.getElementById('cNotes').value,
-                entryDate: new Date().toISOString(),
-                source: 'collector',
-                collectorDevice: navigator.userAgent.substring(0, 50)
-            };
-
-            // Validate required fields
-            if (!entry.surgeryDate || !entry.patientId || !entry.procedure) {
-                alert('Please fill in required fields: Date, Patient ID, and Procedure');
-                return;
-            }
-
-            collectorEntries.push(entry);
-            currentCollectorIndex = collectorEntries.length - 1;
-
-            // Clear form for next entry
-            document.getElementById('collectorForm').reset();
-            document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
-
-            // Update buttons
-            updateCollectorNavButtons();
-
-            // Show success message
-            document.getElementById('collectorSuccess').classList.remove('hidden');
-            updateCollectorSuccessUI();
-
-            // Auto-save to localStorage
-            await saveCollectorEntriesToStorage();
-
-            // Auto-sync to cloud if online
-            if (navigator.onLine) {
-                await syncCollectorToDrive();
-            } else {
-                pendingCloudSync = true;
-                document.getElementById('collectorCloudStatus').textContent = '⚠️ Offline — will sync when connection returns';
-            }
-        }
-
-        async function collectorBack() {
-            if (currentCollectorIndex <= 0) return;
-
-            currentCollectorIndex--;
-            loadCollectorEntry(currentCollectorIndex);
-            updateCollectorNavButtons();
-        }
-
-        function collectorGoBack() {
-            // Go back to role selection screen
-            document.getElementById('collectorApp').classList.add('hidden');
-            document.getElementById('loginScreen').classList.remove('hidden');
-            // Reset to surgeon selection by default
-            selectRole('surgeon');
-        }
-
-        function loadCollectorEntry(index) {
-            const entry = collectorEntries[index];
-            if (!entry) return;
-
-            document.getElementById('cSurgeryDate').value = entry.surgeryDate || '';
-            document.getElementById('cPatientId').value = entry.patientId || '';
-            document.getElementById('cPatientName').value = entry.patientName || '';
-            document.getElementById('cAge').value = entry.age || '';
-            document.getElementById('cGender').value = entry.gender || '';
-            document.getElementById('cCaseType').value = entry.caseType || 'Elective';
-            document.getElementById('cSurgeryType').value = entry.surgeryType || 'Major';
-            document.getElementById('cProcedure').value = entry.procedure || '';
-            document.getElementById('cDiagnosis').value = entry.diagnosis || '';
-            document.getElementById('cSurgeon').value = entry.surgeon || '';
-            document.getElementById('cRole').value = entry.role || 'Independently Performed';
-            document.getElementById('cAnesthesia').value = entry.anesthesia || 'GA';
-            document.getElementById('cOutcome').value = entry.outcome || 'Successful';
-            document.getElementById('cNotes').value = entry.notes || '';
-        }
-
-        function updateCollectorNavButtons() {
-            document.getElementById('collectorBackBtn').disabled = currentCollectorIndex <= 0;
-        }
-
-        function updateCollectorSuccessUI() {
-            const count = collectorEntries.length;
-            document.getElementById('collectorSyncStatus').innerHTML = 
-                `✅ <strong>${count} entry${count > 1 ? 'ies' : 'y'}</strong> saved locally`;
-            document.getElementById('collectorCloudStatus').textContent = '';
-        }
-
-        async function saveCollectorEntriesToStorage() {
-            if (collectorEntries.length === 0) return;
-            const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
-            localStorage.setItem(COLLECTOR_STORAGE, JSON.stringify(encrypted));
-        }
-
-        // ==================== COLLECTOR CLOUD SYNC ====================
-        async function syncCollectorToDrive() {
-            if (collectorEntries.length === 0) {
-                alert('No entries to sync');
-                return;
-            }
-
-            const syncBtn = document.querySelector('#collectorSuccess button[onclick="syncCollectorToDrive()"]');
-            if (syncBtn) syncBtn.textContent = '⏳ Syncing...';
-
-            try {
-                // Encrypt all entries
-                const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
-
-                // Send to Apps Script
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    redirect: 'follow',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({
-                        action: 'collect',
-                        secret: COLLECTOR_SECRET,
-                        encryptedData: encrypted,
-                        device: navigator.userAgent.substring(0, 50),
-                        submissionId: Date.now().toString()
-                    })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    document.getElementById('collectorCloudStatus').innerHTML = 
-                        `<span style="color: #059669;">☁️ Synced to Drive! Total submissions: ${result.submissionCount}</span>`;
-                    pendingCloudSync = false;
-
-                    // Clear local storage after successful sync (optional — keeps local as backup)
-                    // localStorage.removeItem(COLLECTOR_STORAGE);
-                    // collectorEntries = [];
-                    // currentCollectorIndex = -1;
-                    // document.getElementById('collectorForm').reset();
-                    // document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
-                    // document.getElementById('collectorSuccess').classList.add('hidden');
-                    // updateCollectorNavButtons();
-                } else {
-                    throw new Error(result.message || 'Sync failed');
-                }
-            } catch (err) {
-                document.getElementById('collectorCloudStatus').innerHTML = 
-                    `<span style="color: #dc2626;">❌ Sync failed: ${err.message}</span>`;
-                pendingCloudSync = true;
-            }
-
-            if (syncBtn) syncBtn.textContent = '☁️ Sync to Drive';
-        }
-
-        async function downloadAllCollectorData() {
-            if (collectorEntries.length === 0) { 
-                const stored = localStorage.getItem(COLLECTOR_STORAGE);
-                if (stored) {
-                    const decrypted = await decryptData(JSON.parse(stored), COLLECTOR_KEY);
-                    if (decrypted && decrypted.length > 0) {
-                        collectorEntries = decrypted;
-                    } else {
-                        alert('No data to download'); return;
-                    }
-                } else {
-                    alert('No data to download'); return;
-                }
-            }
-
-            const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
-            const blob = new Blob([JSON.stringify(encrypted)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `collector-data-${collectorEntries.length}-entries-${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-
-            alert(`✅ ${collectorEntries.length} entries downloaded!`);
-        }
-
-        // Override the old download function
-        async function downloadCollectorData() {
-            await downloadAllCollectorData();
-        }
-
-        // ==================== SURGEON: LOAD COLLECTOR SUBMISSIONS FROM DRIVE (MERGE) ====================
-        async function loadCollectorSubmissionsFromDrive() {
-            if (!encryptionKey) { alert('Please login as surgeon first'); return; }
-
-            document.getElementById('uploadProgress').classList.remove('hidden');
-            document.getElementById('progressFill').style.width = '30%';
-            document.getElementById('uploadStatus').textContent = 'Fetching collector submissions from Drive...';
-
-            try {
-                const response = await fetch(APPS_SCRIPT_URL + '?action=getCollectors');
-                const data = await response.json();
-
-                if (!data.submissions || data.submissions.length === 0) {
-                    alert('No collector submissions found in Drive');
-                    document.getElementById('uploadProgress').classList.add('hidden');
-                    return;
-                }
-
-                document.getElementById('progressFill').style.width = '50%';
-                document.getElementById('uploadStatus').textContent = `Found ${data.submissions.length} submission(s)...`;
-
-                let totalImported = 0;
-                let duplicatesSkipped = 0;
-
-                // Get existing data and build a set of existing IDs to avoid duplicates
-                const currentData = await getData();
-                const existingIds = new Set(currentData.map(e => e.id));
-
-                for (const sub of data.submissions) {
-                    try {
-                        const collectorData = await decryptData(sub.encryptedData, COLLECTOR_KEY);
-                        if (!collectorData || !Array.isArray(collectorData)) continue;
-
-                        collectorData.forEach(entry => {
-                            // Skip if this entry ID already exists (merge, don't replace)
-                            if (existingIds.has(entry.id)) {
-                                duplicatesSkipped++;
-                                return;
-                            }
-
-                            entry.importedAt = new Date().toISOString();
-                            entry.originalSource = entry.source;
-                            entry.source = 'collector-imported';
-                            entry.submittedFromDrive = true;
-                            entry.submittedAt = sub.submittedAt;
-                            currentData.push(entry);
-                            existingIds.add(entry.id); // Track to prevent duplicates within same import
-                        });
-                        totalImported += collectorData.length;
-                    } catch (e) {
-                        console.error('Failed to decrypt submission:', e);
-                    }
-                }
-
-                document.getElementById('progressFill').style.width = '80%';
-
-                // Save merged data
-                await saveData(currentData);
-
-                // Ask to clear collector queue
-                const shouldClear = confirm(
-                    `Import complete!
-
-` +
-                    `✅ New entries imported: ${totalImported - duplicatesSkipped}
-` +
-                    `⏭️ Duplicates skipped: ${duplicatesSkipped}
-
-` +
-                    `Clear collector queue from Drive?`
-                );
-
-                if (shouldClear) {
-                    document.getElementById('uploadStatus').textContent = 'Clearing collector queue...';
-                    await fetch(APPS_SCRIPT_URL, {
-                        method: 'POST',
-                        redirect: 'follow',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({
-                            action: 'clearCollectors',
-                            password: SURGEON_PASSWORD
-                        })
-                    });
-                }
-
-                document.getElementById('progressFill').style.width = '100%';
-                document.getElementById('uploadStatus').textContent = `✅ Merged ${totalImported - duplicatesSkipped} new entries (${duplicatesSkipped} duplicates skipped)`;
-                updateSyncStatus('pending'); // Local data changed, needs surgeon save to Drive
-                updateStats();
-                renderLogs();
-
-                setTimeout(() => {
-                    document.getElementById('uploadProgress').classList.add('hidden');
-                    document.getElementById('progressFill').style.width = '0%';
-                }, 3000);
-
-            } catch (err) {
-                document.getElementById('uploadProgress').classList.add('hidden');
-                alert('❌ Failed to load collector submissions: ' + err.message);
-                console.error(err);
-            }
+            updateStats(); renderLogs();
         }
 
         // ==================== INIT ====================
+        document.getElementById('viewModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
+
         window.addEventListener('DOMContentLoaded', () => {
             checkCollectorMode();
-            loadSavedCollectorEntries();
-        });
-
-        async function loadSavedCollectorEntries() {
-            const stored = localStorage.getItem(COLLECTOR_STORAGE);
-            if (stored) {
-                try {
-                    const decrypted = await decryptData(JSON.parse(stored), COLLECTOR_KEY);
-                    if (decrypted && decrypted.length > 0) {
-                        collectorEntries = decrypted;
-                        currentCollectorIndex = collectorEntries.length - 1;
-                        loadCollectorEntry(currentCollectorIndex);
-                        updateCollectorNavButtons();
-                        document.getElementById('collectorSuccess').classList.remove('hidden');
-                        updateCollectorSuccessUI();
-                    }
-                } catch (e) {
-                    console.error('Failed to load saved entries:', e);
-                }
-            }
-        }
-
-        // Auto-sync when coming back online
-        window.addEventListener('online', async () => {
-            if (pendingCloudSync && collectorEntries.length > 0) {
-                document.getElementById('collectorCloudStatus').textContent = '🌐 Back online — syncing...';
-                await syncCollectorToDrive();
-            }
         });
     </script>
 </body>
