@@ -508,6 +508,16 @@
                         <button class="btn btn-success" onclick="importCollectorFiles()" style="margin-top: 15px;">📥 Import & Decrypt All</button>
                     </div>
 
+                    <div style="margin-top: 25px; padding: 20px; background: #f0f9ff; border-radius: 10px; border: 1px solid #bae6fd;">
+                        <h4 style="color: #0369a1; margin-bottom: 10px;">☁️ Import from Drive</h4>
+                        <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 10px;">
+                            Collectors can now submit directly to Drive. Load all their submissions here without handling files.
+                        </p>
+                        <button class="btn btn-primary" onclick="loadCollectorSubmissionsFromDrive()">
+                            📥 Load Collector Submissions from Drive
+                        </button>
+                    </div>
+
                     <div id="importResults" class="hidden" style="margin-top: 15px;"></div>
                 </div>
             </div>
@@ -615,6 +625,7 @@
         // ==================== APPS SCRIPT CONFIG ====================
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx8vAMDuHdwh0UawCAjYo5FFECENr3IbfcRpbg_zLIEleLitJx64loPqbk3D-eU8yuKtg/exec';
         const SURGEON_PASSWORD = 'ChangeThisToYourSecretPassword123'; // Must match Apps Script
+        const COLLECTOR_SECRET = 'COLLECTOR_SUBMIT_2024'; // Must match Apps Script
 
         // ==================== STATE ====================
         let currentRole = 'surgeon';
@@ -1349,9 +1360,10 @@
             if (e.target === this) closeModal();
         });
 
-        // ==================== COLLECTOR NAVIGATION ====================
+        // ==================== COLLECTOR NAVIGATION & CLOUD SYNC ====================
         let collectorEntries = [];
         let currentCollectorIndex = -1;
+        let pendingCloudSync = false;
 
         async function collectorNext() {
             // Save current form data to temp array
@@ -1394,12 +1406,18 @@
 
             // Show success message
             document.getElementById('collectorSuccess').classList.remove('hidden');
-            document.getElementById('collectorSuccess').innerHTML = 
-                `✅ Entry #${collectorEntries.length} saved! You can add another or 
-                <button class="btn btn-primary" onclick="downloadAllCollectorData()" style="padding: 4px 12px; font-size: 0.85rem;">📥 Download all ${collectorEntries.length} entries</button>`;
+            updateCollectorSuccessUI();
 
             // Auto-save to localStorage
             await saveCollectorEntriesToStorage();
+
+            // Auto-sync to cloud if online
+            if (navigator.onLine) {
+                await syncCollectorToDrive();
+            } else {
+                pendingCloudSync = true;
+                document.getElementById('collectorCloudStatus').textContent = '⚠️ Offline — will sync when connection returns';
+            }
         }
 
         async function collectorBack() {
@@ -1432,10 +1450,13 @@
 
         function updateCollectorNavButtons() {
             document.getElementById('collectorBackBtn').disabled = currentCollectorIndex <= 0;
-            document.getElementById('collectorNextBtn').innerHTML = 
-                currentCollectorIndex >= 0 && currentCollectorIndex < collectorEntries.length - 1 
-                ? 'Next / New Entry ➡️' 
-                : 'Next / New Entry ➡️';
+        }
+
+        function updateCollectorSuccessUI() {
+            const count = collectorEntries.length;
+            document.getElementById('collectorSyncStatus').innerHTML = 
+                `✅ <strong>${count} entry${count > 1 ? 'ies' : 'y'}</strong> saved locally`;
+            document.getElementById('collectorCloudStatus').textContent = '';
         }
 
         async function saveCollectorEntriesToStorage() {
@@ -1444,21 +1465,73 @@
             localStorage.setItem(COLLECTOR_STORAGE, JSON.stringify(encrypted));
         }
 
+        // ==================== COLLECTOR CLOUD SYNC ====================
+        async function syncCollectorToDrive() {
+            if (collectorEntries.length === 0) {
+                alert('No entries to sync');
+                return;
+            }
+
+            const syncBtn = document.querySelector('#collectorSuccess button[onclick="syncCollectorToDrive()"]');
+            if (syncBtn) syncBtn.textContent = '⏳ Syncing...';
+
+            try {
+                // Encrypt all entries
+                const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
+
+                // Send to Apps Script
+                const response = await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'collect',
+                        secret: COLLECTOR_SECRET,
+                        encryptedData: encrypted,
+                        device: navigator.userAgent.substring(0, 50),
+                        submissionId: Date.now().toString()
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    document.getElementById('collectorCloudStatus').innerHTML = 
+                        `<span style="color: #059669;">☁️ Synced to Drive! Total submissions: ${result.submissionCount}</span>`;
+                    pendingCloudSync = false;
+
+                    // Clear local storage after successful sync (optional — keeps local as backup)
+                    // localStorage.removeItem(COLLECTOR_STORAGE);
+                    // collectorEntries = [];
+                    // currentCollectorIndex = -1;
+                    // document.getElementById('collectorForm').reset();
+                    // document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
+                    // document.getElementById('collectorSuccess').classList.add('hidden');
+                    // updateCollectorNavButtons();
+                } else {
+                    throw new Error(result.message || 'Sync failed');
+                }
+            } catch (err) {
+                document.getElementById('collectorCloudStatus').innerHTML = 
+                    `<span style="color: #dc2626;">❌ Sync failed: ${err.message}</span>`;
+                pendingCloudSync = true;
+            }
+
+            if (syncBtn) syncBtn.textContent = '☁️ Sync to Drive';
+        }
+
         async function downloadAllCollectorData() {
             if (collectorEntries.length === 0) { 
-                // Try loading from storage
                 const stored = localStorage.getItem(COLLECTOR_STORAGE);
                 if (stored) {
                     const decrypted = await decryptData(JSON.parse(stored), COLLECTOR_KEY);
                     if (decrypted && decrypted.length > 0) {
                         collectorEntries = decrypted;
                     } else {
-                        alert('No data to download'); 
-                        return; 
+                        alert('No data to download'); return;
                     }
                 } else {
-                    alert('No data to download'); 
-                    return; 
+                    alert('No data to download'); return;
                 }
             }
 
@@ -1471,16 +1544,7 @@
             a.click();
             URL.revokeObjectURL(url);
 
-            // Clear everything
-            collectorEntries = [];
-            currentCollectorIndex = -1;
-            localStorage.removeItem(COLLECTOR_STORAGE);
-            document.getElementById('collectorForm').reset();
-            document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
-            document.getElementById('collectorSuccess').classList.add('hidden');
-            updateCollectorNavButtons();
-
-            alert(`✅ ${collectorEntries.length} entries downloaded! Send this file to the surgeon for import.`);
+            alert(`✅ ${collectorEntries.length} entries downloaded!`);
         }
 
         // Override the old download function
@@ -1488,10 +1552,87 @@
             await downloadAllCollectorData();
         }
 
+        // ==================== SURGEON: LOAD COLLECTOR SUBMISSIONS FROM DRIVE ====================
+        async function loadCollectorSubmissionsFromDrive() {
+            if (!encryptionKey) { alert('Please login as surgeon first'); return; }
+
+            document.getElementById('uploadProgress').classList.remove('hidden');
+            document.getElementById('progressFill').style.width = '30%';
+            document.getElementById('uploadStatus').textContent = 'Fetching collector submissions from Drive...';
+
+            try {
+                const response = await fetch(APPS_SCRIPT_URL + '?action=getCollectors');
+                const data = await response.json();
+
+                if (!data.submissions || data.submissions.length === 0) {
+                    alert('No collector submissions found in Drive');
+                    document.getElementById('uploadProgress').classList.add('hidden');
+                    return;
+                }
+
+                document.getElementById('progressFill').style.width = '50%';
+                document.getElementById('uploadStatus').textContent = `Found ${data.submissions.length} submission(s)...`;
+
+                let totalImported = 0;
+                const currentData = await getData();
+
+                for (const sub of data.submissions) {
+                    try {
+                        const collectorData = await decryptData(sub.encryptedData, COLLECTOR_KEY);
+                        if (!collectorData || !Array.isArray(collectorData)) continue;
+
+                        collectorData.forEach(entry => {
+                            entry.importedAt = new Date().toISOString();
+                            entry.originalSource = entry.source;
+                            entry.source = 'collector-imported';
+                            entry.submittedFromDrive = true;
+                            entry.submittedAt = sub.submittedAt;
+                            currentData.push(entry);
+                        });
+                        totalImported += collectorData.length;
+                    } catch (e) {
+                        console.error('Failed to decrypt submission:', e);
+                    }
+                }
+
+                document.getElementById('progressFill').style.width = '80%';
+
+                await saveData(currentData);
+
+                // Clear collector submissions from Drive
+                if (confirm(`Import ${totalImported} entries? Clear collector queue from Drive after import?`)) {
+                    await fetch(APPS_SCRIPT_URL, {
+                        method: 'POST',
+                        redirect: 'follow',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'clearCollectors',
+                            password: SURGEON_PASSWORD
+                        })
+                    });
+                }
+
+                document.getElementById('progressFill').style.width = '100%';
+                document.getElementById('uploadStatus').textContent = `✅ Imported ${totalImported} entries from Drive`;
+                updateSyncStatus('synced');
+                updateStats();
+                renderLogs();
+
+                setTimeout(() => {
+                    document.getElementById('uploadProgress').classList.add('hidden');
+                    document.getElementById('progressFill').style.width = '0%';
+                }, 3000);
+
+            } catch (err) {
+                document.getElementById('uploadProgress').classList.add('hidden');
+                alert('❌ Failed to load collector submissions: ' + err.message);
+                console.error(err);
+            }
+        }
+
         // ==================== INIT ====================
         window.addEventListener('DOMContentLoaded', () => {
             checkCollectorMode();
-            // Load any saved collector entries
             loadSavedCollectorEntries();
         });
 
@@ -1506,15 +1647,21 @@
                         loadCollectorEntry(currentCollectorIndex);
                         updateCollectorNavButtons();
                         document.getElementById('collectorSuccess').classList.remove('hidden');
-                        document.getElementById('collectorSuccess').innerHTML = 
-                            `✅ ${collectorEntries.length} entries saved! You can add another or 
-                            <button class="btn btn-primary" onclick="downloadAllCollectorData()" style="padding: 4px 12px; font-size: 0.85rem;">📥 Download all ${collectorEntries.length} entries</button>`;
+                        updateCollectorSuccessUI();
                     }
                 } catch (e) {
                     console.error('Failed to load saved entries:', e);
                 }
             }
         }
+
+        // Auto-sync when coming back online
+        window.addEventListener('online', async () => {
+            if (pendingCloudSync && collectorEntries.length > 0) {
+                document.getElementById('collectorCloudStatus').textContent = '🌐 Back online — syncing...';
+                await syncCollectorToDrive();
+            }
+        });
     </script>
 </body>
 </html>
