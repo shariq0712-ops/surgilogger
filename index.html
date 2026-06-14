@@ -255,9 +255,15 @@
                         <textarea id="cNotes" placeholder="Any complications, special notes..."></textarea>
                     </div>
 
-                    <div class="btn-group">
-                        <button type="submit" class="btn btn-success">💾 Submit Entry</button>
-                        <button type="reset" class="btn btn-secondary">Clear Form</button>
+                    <div class="btn-group" style="justify-content: space-between; align-items: center;">
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-secondary" onclick="collectorBack()" id="collectorBackBtn" disabled>⬅️ Back</button>
+                            <button type="reset" class="btn btn-secondary">Clear Form</button>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="submit" class="btn btn-success">💾 Submit Entry</button>
+                            <button type="button" class="btn btn-primary" onclick="collectorNext()" id="collectorNextBtn">Next / New Entry ➡️</button>
+                        </div>
                     </div>
                 </form>
 
@@ -766,8 +772,7 @@
 
         // ==================== SHAREABLE LINK ====================
         function generateShareableLink() {
-            const baseUrl = window.location.origin + window.location.pathname;
-            const collectorUrl = baseUrl + '?mode=collector';
+            const collectorUrl = 'https://shariq0712-ops.github.io/surgilogger/?mode=collector';
             document.getElementById('shareableLink').textContent = collectorUrl;
         }
 
@@ -781,7 +786,7 @@
         function drawQRCode() {
             const canvas = document.getElementById('qrCanvas');
             const ctx = canvas.getContext('2d');
-            const link = document.getElementById('shareableLink').textContent;
+            const link = 'https://shariq0712-ops.github.io/surgilogger/?mode=collector';
 
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, 200, 200);
@@ -1344,10 +1349,172 @@
             if (e.target === this) closeModal();
         });
 
+        // ==================== COLLECTOR NAVIGATION ====================
+        let collectorEntries = [];
+        let currentCollectorIndex = -1;
+
+        async function collectorNext() {
+            // Save current form data to temp array
+            const entry = {
+                id: Date.now().toString(),
+                surgeryDate: document.getElementById('cSurgeryDate').value,
+                patientId: document.getElementById('cPatientId').value,
+                patientName: document.getElementById('cPatientName').value,
+                age: document.getElementById('cAge').value,
+                gender: document.getElementById('cGender').value,
+                caseType: document.getElementById('cCaseType').value,
+                surgeryType: document.getElementById('cSurgeryType').value,
+                procedure: document.getElementById('cProcedure').value,
+                diagnosis: document.getElementById('cDiagnosis').value,
+                surgeon: document.getElementById('cSurgeon').value,
+                role: document.getElementById('cRole').value,
+                anesthesia: document.getElementById('cAnesthesia').value,
+                outcome: document.getElementById('cOutcome').value,
+                notes: document.getElementById('cNotes').value,
+                entryDate: new Date().toISOString(),
+                source: 'collector',
+                collectorDevice: navigator.userAgent.substring(0, 50)
+            };
+
+            // Validate required fields
+            if (!entry.surgeryDate || !entry.patientId || !entry.procedure) {
+                alert('Please fill in required fields: Date, Patient ID, and Procedure');
+                return;
+            }
+
+            collectorEntries.push(entry);
+            currentCollectorIndex = collectorEntries.length - 1;
+
+            // Clear form for next entry
+            document.getElementById('collectorForm').reset();
+            document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
+
+            // Update buttons
+            updateCollectorNavButtons();
+
+            // Show success message
+            document.getElementById('collectorSuccess').classList.remove('hidden');
+            document.getElementById('collectorSuccess').innerHTML = 
+                `✅ Entry #${collectorEntries.length} saved! You can add another or 
+                <button class="btn btn-primary" onclick="downloadAllCollectorData()" style="padding: 4px 12px; font-size: 0.85rem;">📥 Download all ${collectorEntries.length} entries</button>`;
+
+            // Auto-save to localStorage
+            await saveCollectorEntriesToStorage();
+        }
+
+        async function collectorBack() {
+            if (currentCollectorIndex <= 0) return;
+
+            currentCollectorIndex--;
+            loadCollectorEntry(currentCollectorIndex);
+            updateCollectorNavButtons();
+        }
+
+        function loadCollectorEntry(index) {
+            const entry = collectorEntries[index];
+            if (!entry) return;
+
+            document.getElementById('cSurgeryDate').value = entry.surgeryDate || '';
+            document.getElementById('cPatientId').value = entry.patientId || '';
+            document.getElementById('cPatientName').value = entry.patientName || '';
+            document.getElementById('cAge').value = entry.age || '';
+            document.getElementById('cGender').value = entry.gender || '';
+            document.getElementById('cCaseType').value = entry.caseType || 'Elective';
+            document.getElementById('cSurgeryType').value = entry.surgeryType || 'Major';
+            document.getElementById('cProcedure').value = entry.procedure || '';
+            document.getElementById('cDiagnosis').value = entry.diagnosis || '';
+            document.getElementById('cSurgeon').value = entry.surgeon || '';
+            document.getElementById('cRole').value = entry.role || 'Independently Performed';
+            document.getElementById('cAnesthesia').value = entry.anesthesia || 'GA';
+            document.getElementById('cOutcome').value = entry.outcome || 'Successful';
+            document.getElementById('cNotes').value = entry.notes || '';
+        }
+
+        function updateCollectorNavButtons() {
+            document.getElementById('collectorBackBtn').disabled = currentCollectorIndex <= 0;
+            document.getElementById('collectorNextBtn').innerHTML = 
+                currentCollectorIndex >= 0 && currentCollectorIndex < collectorEntries.length - 1 
+                ? 'Next / New Entry ➡️' 
+                : 'Next / New Entry ➡️';
+        }
+
+        async function saveCollectorEntriesToStorage() {
+            if (collectorEntries.length === 0) return;
+            const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
+            localStorage.setItem(COLLECTOR_STORAGE, JSON.stringify(encrypted));
+        }
+
+        async function downloadAllCollectorData() {
+            if (collectorEntries.length === 0) { 
+                // Try loading from storage
+                const stored = localStorage.getItem(COLLECTOR_STORAGE);
+                if (stored) {
+                    const decrypted = await decryptData(JSON.parse(stored), COLLECTOR_KEY);
+                    if (decrypted && decrypted.length > 0) {
+                        collectorEntries = decrypted;
+                    } else {
+                        alert('No data to download'); 
+                        return; 
+                    }
+                } else {
+                    alert('No data to download'); 
+                    return; 
+                }
+            }
+
+            const encrypted = await encryptData(collectorEntries, COLLECTOR_KEY);
+            const blob = new Blob([JSON.stringify(encrypted)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `collector-data-${collectorEntries.length}-entries-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            // Clear everything
+            collectorEntries = [];
+            currentCollectorIndex = -1;
+            localStorage.removeItem(COLLECTOR_STORAGE);
+            document.getElementById('collectorForm').reset();
+            document.getElementById('cSurgeryDate').value = getTodayDDMMYY();
+            document.getElementById('collectorSuccess').classList.add('hidden');
+            updateCollectorNavButtons();
+
+            alert(`✅ ${collectorEntries.length} entries downloaded! Send this file to the surgeon for import.`);
+        }
+
+        // Override the old download function
+        async function downloadCollectorData() {
+            await downloadAllCollectorData();
+        }
+
         // ==================== INIT ====================
         window.addEventListener('DOMContentLoaded', () => {
             checkCollectorMode();
+            // Load any saved collector entries
+            loadSavedCollectorEntries();
         });
+
+        async function loadSavedCollectorEntries() {
+            const stored = localStorage.getItem(COLLECTOR_STORAGE);
+            if (stored) {
+                try {
+                    const decrypted = await decryptData(JSON.parse(stored), COLLECTOR_KEY);
+                    if (decrypted && decrypted.length > 0) {
+                        collectorEntries = decrypted;
+                        currentCollectorIndex = collectorEntries.length - 1;
+                        loadCollectorEntry(currentCollectorIndex);
+                        updateCollectorNavButtons();
+                        document.getElementById('collectorSuccess').classList.remove('hidden');
+                        document.getElementById('collectorSuccess').innerHTML = 
+                            `✅ ${collectorEntries.length} entries saved! You can add another or 
+                            <button class="btn btn-primary" onclick="downloadAllCollectorData()" style="padding: 4px 12px; font-size: 0.85rem;">📥 Download all ${collectorEntries.length} entries</button>`;
+                    }
+                } catch (e) {
+                    console.error('Failed to load saved entries:', e);
+                }
+            }
+        }
     </script>
 </body>
 </html>
